@@ -212,6 +212,16 @@ task shadowJar(type: ShadowJar) {
     minimize {
         exclude(dependency('.*spongepowered:mixin:.*'))
     }
+
+    // ForgeGradle/reobf needs the raw JAR as an intermediate input, but it is
+    // not a distributable artifact. Remove it only after the shaded release
+    // has been assembled successfully so build/libs contains one usable JAR.
+    doLast {
+        def rawJar = tasks.jar.archiveFile.get().asFile
+        if (rawJar.exists() && !rawJar.delete()) {
+            throw new GradleException("Could not remove intermediate JAR: ${rawJar}")
+        }
+    }
 }
 
 tasks.assemble.dependsOn tasks.shadowJar
