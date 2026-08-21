@@ -48,20 +48,13 @@ import de.johni0702.minecraft.gui.utils.Colors;
 import de.johni0702.minecraft.gui.utils.lwjgl.ReadableDimension;
 import de.johni0702.minecraft.gui.utils.lwjgl.ReadablePoint;
 import de.johni0702.minecraft.gui.utils.lwjgl.WritablePoint;
-import net.minecraft.client.resource.language.I18n;
-import net.minecraft.util.crash.CrashReport;
+import net.minecraft.client.resources.I18n;
+import net.minecraft.crash.CrashReport;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-//#if MC>=11400
-//#else
-//$$ import org.lwjgl.input.Keyboard;
-//#if MC>=10800
-//$$ import net.minecraftforge.fml.common.Loader;
-//#else
-//$$ import cpw.mods.fml.common.Loader;
-//#endif
-//#endif
+import org.lwjgl.input.Keyboard;
+import cpw.mods.fml.common.Loader;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -108,7 +101,7 @@ public class GuiPathing {
                 @Override
                 protected void close() {
                     super.close();
-                    getMinecraft().openScreen(null);
+                    getMinecraft().displayGuiScreen(null);
                 }
             }.open();
             screen.display();
@@ -135,7 +128,7 @@ public class GuiPathing {
                         label = "replaymod.gui.ingame.menu.removespeckeyframe";
                     }
                 }
-                tooltip.setText(I18n.translate(label) + " (" + mod.keyPositionKeyframe.getBoundKey() + ")");
+                tooltip.setText(I18n.format(label) + " (" + mod.keyPositionKeyframe.getBoundKey() + ")");
             }
             return tooltip;
         }
@@ -152,7 +145,7 @@ public class GuiPathing {
                 } else { // Remove time keyframe
                     label = "replaymod.gui.ingame.menu.removetimekeyframe";
                 }
-                tooltip.setText(I18n.translate(label) + " (" + mod.keyTimeKeyframe.getBoundKey() + ")");
+                tooltip.setText(I18n.format(label) + " (" + mod.keyTimeKeyframe.getBoundKey() + ")");
             }
             return tooltip;
         }
@@ -269,8 +262,23 @@ public class GuiPathing {
                     Path timePath = new SPTimeline(timeline).getTimePath();
                     timePath.setActive(!ignoreTimeKeyframes);
 
-                    // Start from cursor time unless the control key is pressed (then start from beginning)
-                    int startTime = Keyboard.isKeyDown(Keyboard.KEY_LCONTROL)? 0 : GuiPathing.this.timeline.getCursorPosition();
+                    // Start from cursor time unless the control key is pressed (then start from beginning).
+                    // If the cursor is already at/past the end of the camera path, wrap back to the
+                    // beginning instead of starting and immediately finishing. A cursor inside the
+                    // path intentionally continues from that point to the end.
+                    boolean fromBeginning = Keyboard.isKeyDown(Keyboard.KEY_LCONTROL);
+                    int startTime = fromBeginning ? 0 : GuiPathing.this.timeline.getCursorPosition();
+                    if (!fromBeginning) {
+                        long lastKeyframeTime = 0L;
+                        for (Path path : timeline.getPaths()) {
+                            for (Keyframe keyframe : path.getKeyframes()) {
+                                lastKeyframeTime = Math.max(lastKeyframeTime, keyframe.getTime());
+                            }
+                        }
+                        if (startTime >= lastKeyframeTime) {
+                            startTime = 0;
+                        }
+                    }
                     ListenableFuture<Void> future = player.start(timeline, startTime);
                     overlay.setCloseable(false);
                     overlay.setMouseVisible(true);
@@ -402,23 +410,12 @@ public class GuiPathing {
     }
 
     public void clearKeyframesButtonPressed() {
-        GuiYesNoPopup popup = GuiYesNoPopup.open(replayHandler.getOverlay(),
+        GuiYesNoPopup.open(replayHandler.getOverlay(),
                 new GuiLabel().setI18nText("replaymod.gui.clearcallback.title").setColor(Colors.BLACK)
-        ).setYesI18nLabel("gui.yes").setNoI18nLabel("gui.no");
-        Futures.addCallback(popup.getFuture(), new FutureCallback<Boolean>() {
-            @Override
-            public void onSuccess(Boolean delete) {
-                if (delete) {
-                    mod.clearCurrentTimeline();
-                    if (entityTracker != null) {
-                        mod.getCurrentTimeline().setEntityTracker(entityTracker);
-                    }
-                }
-            }
-
-            @Override
-            public void onFailure(Throwable t) {
-                t.printStackTrace();
+        ).setYesI18nLabel("gui.yes").setNoI18nLabel("gui.no").onAccept(() -> {
+            mod.clearCurrentTimeline();
+            if (entityTracker != null) {
+                mod.getCurrentTimeline().setEntityTracker(entityTracker);
             }
         });
     }
@@ -522,7 +519,7 @@ public class GuiPathing {
             timeline.getPaths().forEach(Path::updateAll);
             return timeline;
         } catch (Throwable t) {
-            error(LOGGER, replayHandler.getOverlay(), CrashReport.create(t, "Cloning timeline"), () -> {});
+            error(LOGGER, replayHandler.getOverlay(), CrashReport.makeCrashReport(t, "Cloning timeline"), () -> {});
             return null;
         }
     }
@@ -588,7 +585,7 @@ public class GuiPathing {
                     if (!errorShown) {
                         String message = "Failed to load entity tracker, spectator keyframes will be broken.";
                         GuiReplayOverlay overlay = replayHandler.getOverlay();
-                        Utils.error(LOGGER, overlay, CrashReport.create(t, message), () -> {
+                        Utils.error(LOGGER, overlay, CrashReport.makeCrashReport(t, message), () -> {
                             popup.close();
                             thenRun.run();
                         });
@@ -621,7 +618,7 @@ public class GuiPathing {
         if (timeline.getPositionPath().getKeyframes().isEmpty() &&
                 timeline.getTimePath().getKeyframes().isEmpty() &&
                 time > 1000) {
-            String text = I18n.translate("replaymod.gui.ingame.first_keyframe_not_at_start_warning");
+            String text = I18n.format("replaymod.gui.ingame.first_keyframe_not_at_start_warning");
             GuiInfoPopup.open(overlay, text.split("\\\\n"));
         }
 
@@ -655,10 +652,10 @@ public class GuiPathing {
                     CameraEntity camera = replayHandler.getCameraEntity();
                     int spectatedId = -1;
                     if (!replayHandler.isCameraView() && !neverSpectator) {
-                        spectatedId = getRenderViewEntity(replayHandler.getOverlay().getMinecraft()).getEntityId();
+                        spectatedId = replayHandler.getOverlay().getMinecraft().renderViewEntity.getEntityId();
                     }
-                    timeline.addPositionKeyframe(time, Entity_getX(camera), Entity_getY(camera), Entity_getZ(camera),
-                            camera.yaw, camera.pitch, camera.roll, spectatedId);
+                    timeline.addPositionKeyframe(time, camera.posX, camera.posY, camera.posZ,
+                            camera.rotationYaw, camera.rotationPitch, camera.roll, spectatedId);
                     mod.setSelected(path, time);
                 }
                 break;

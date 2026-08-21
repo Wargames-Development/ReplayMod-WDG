@@ -1,53 +1,31 @@
 package com.replaymod.core.mixin;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.crash.CrashReport;
-import net.minecraft.client.render.RenderTickCounter;
+import net.minecraft.client.Minecraft;
+import net.minecraft.crash.CrashReport;
+import net.minecraft.util.Timer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
 import java.util.Queue;
 
-//#if MC>=11400
-import java.util.concurrent.CompletableFuture;
-//#endif
+import java.util.concurrent.FutureTask;
 
-//#if MC<11400
-//$$ import java.util.concurrent.FutureTask;
-//#endif
+import net.minecraft.client.resources.IResourcePack;
+import java.util.List;
 
-//#if MC<11400
-//$$ import net.minecraft.client.resources.IResourcePack;
-//$$ import java.util.List;
-//#endif
-
-@Mixin(MinecraftClient.class)
+@Mixin(Minecraft.class)
 public interface MinecraftAccessor {
-    @Accessor("renderTickCounter")
-    RenderTickCounter getTimer();
-    @Accessor("renderTickCounter")
-    void setTimer(RenderTickCounter value);
-
-    //#if MC>=11400
     @Accessor
-    CompletableFuture<Void> getResourceReloadFuture();
+    Timer getTimer();
     @Accessor
-    void setResourceReloadFuture(CompletableFuture<Void> value);
-    //#endif
+    void setTimer(Timer value);
 
-    //#if MC>=11400
     @Accessor
-    Queue<Runnable> getRenderTaskQueue();
-    //#else
-    //$$ @Accessor
-    //$$ Queue<FutureTask<?>> getScheduledTasks();
-    //#endif
+    Queue<FutureTask<?>> getScheduledTasks();
 
-    @Accessor("crashReport")
+    @Accessor
     CrashReport getCrashReporter();
 
-    //#if MC<11400
-    //$$ @Accessor
-    //$$ List<IResourcePack> getDefaultResourcePacks();
-    //#endif
+    @Accessor
+    List<IResourcePack> getDefaultResourcePacks();
 }

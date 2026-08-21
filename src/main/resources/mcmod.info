@@ -1,7 +1,7 @@
 [
   {
     "modid": "replaymod",
-    "name": "Replay Mod",
+    "name": "ReplayMod-WDG",
     "description": "A Mod which allows you to record, replay and share your Minecraft experience.",
     "version": "${version}",
     "mcversion": "${mcversion}",
@@ -9,7 +9,8 @@
     "updateUrl": "https://replaymod.com/download",
     "authorList": [
       "CrushedPixel",
-      "johni0702"
+      "johni0702",
+      "Wargames Development"
     ],
     "logoFile": "replaymod_logo.png",
     "screenshots": [],
@@ -25,7 +26,8 @@
     "updateUrl": "https://replaymod.com/download",
     "authorList": [
       "CrushedPixel",
-      "johni0702"
+      "johni0702",
+      "Wargames Development"
     ],
     "logoFile": "replaymod_logo.png",
     "parent": "replaymod",
@@ -42,7 +44,8 @@
     "updateUrl": "https://replaymod.com/download",
     "authorList": [
       "CrushedPixel",
-      "johni0702"
+      "johni0702",
+      "Wargames Development"
     ],
     "logoFile": "replaymod_logo.png",
     "parent": "replaymod",
@@ -59,12 +62,16 @@
     "updateUrl": "https://replaymod.com/download",
     "authorList": [
       "CrushedPixel",
-      "johni0702"
+      "johni0702",
+      "Wargames Development"
     ],
     "logoFile": "replaymod_logo.png",
     "parent": "replaymod",
     "screenshots": [],
-    "dependencies": ["required-after:replaymod-replay", "required-after:replaymod-render"]
+    "dependencies": [
+      "required-after:replaymod-replay",
+      "required-after:replaymod-render"
+    ]
   },
   {
     "modid": "replaymod-render",
@@ -76,12 +83,15 @@
     "updateUrl": "https://replaymod.com/download",
     "authorList": [
       "CrushedPixel",
-      "johni0702"
+      "johni0702",
+      "Wargames Development"
     ],
     "logoFile": "replaymod_logo.png",
     "parent": "replaymod",
     "screenshots": [],
-    "dependencies": ["required-after:replaymod-replay"]
+    "dependencies": [
+      "required-after:replaymod-replay"
+    ]
   },
   {
     "modid": "replaymod-editor",
@@ -93,7 +103,8 @@
     "updateUrl": "https://replaymod.com/download",
     "authorList": [
       "CrushedPixel",
-      "johni0702"
+      "johni0702",
+      "Wargames Development"
     ],
     "logoFile": "replaymod_logo.png",
     "parent": "replaymod",
@@ -110,7 +121,8 @@
     "updateUrl": "https://replaymod.com/download",
     "authorList": [
       "CrushedPixel",
-      "johni0702"
+      "johni0702",
+      "Wargames Development"
     ],
     "logoFile": "replaymod_logo.png",
     "parent": "replaymod",
@@ -118,36 +130,21 @@
     "dependencies": []
   },
   {
-    "modid": "replaymod-restrictions",
-    "name": "Replay Mod - Restrictions",
-    "description": "Server-side Restrictions Module of the ReplayMod - Restrict what clients can do in replays",
+    "modid": "replaymod-compat",
+    "name": "Replay Mod - Compatibility",
+    "description": "Compatibility Module of the ReplayMod - Adds compatibility with other mods",
     "version": "${version}",
     "mcversion": "${mcversion}",
     "url": "https://replaymod.com",
     "updateUrl": "https://replaymod.com/download",
     "authorList": [
       "CrushedPixel",
-      "johni0702"
+      "johni0702",
+      "Wargames Development"
     ],
     "logoFile": "replaymod_logo.png",
+    "parent": "replaymod",
     "screenshots": [],
     "dependencies": []
-  },
-  {
-      "modid": "replaymod-compat",
-      "name": "Replay Mod - Compatibility",
-      "description": "Compatibility Module of the ReplayMod - Adds compatibility with other mods",
-      "version": "${version}",
-      "mcversion": "${mcversion}",
-      "url": "https://replaymod.com",
-      "updateUrl": "https://replaymod.com/download",
-      "authorList": [
-        "CrushedPixel",
-        "johni0702"
-      ],
-      "logoFile": "replaymod_logo.png",
-      "parent": "replaymod",
-      "screenshots": [],
-      "dependencies": []
-    }
+  }
 ]

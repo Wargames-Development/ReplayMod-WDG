@@ -3,6 +3,7 @@ package com.replaymod.recording.handler;
 import com.replaymod.core.ReplayMod;
 import com.replaymod.core.utils.ModCompat;
 import com.replaymod.core.utils.Utils;
+import com.replaymod.core.versions.MCVer;
 import com.replaymod.editor.gui.MarkerProcessor;
 import com.replaymod.recording.ServerInfoExt;
 import com.replaymod.recording.Setting;
@@ -13,23 +14,11 @@ import com.replaymod.recording.packet.PacketListener;
 import com.replaymod.replaystudio.replay.ReplayFile;
 import com.replaymod.replaystudio.replay.ReplayMetaData;
 import io.netty.channel.Channel;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ServerInfo;
-import net.minecraft.client.resource.language.I18n;
-import net.minecraft.network.ClientConnection;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ServerData;
+import net.minecraft.client.resources.I18n;
+import net.minecraft.network.NetworkManager;
 import org.apache.logging.log4j.Logger;
-
-//#if MC>=11600
-import net.minecraft.world.World;
-//#else
-//#if MC>=11400
-//$$ import net.minecraft.world.dimension.DimensionType;
-//#endif
-//$$
-//#if MC>=10800
-//$$ import net.minecraft.world.level.LevelGeneratorType;
-//#endif
-//#endif
 
 import java.nio.file.Path;
 import java.text.SimpleDateFormat;
@@ -45,7 +34,7 @@ public class ConnectionEventHandler {
     private static final String packetHandlerKey = "packet_handler";
     private static final String DATE_FORMAT = "yyyy_MM_dd_HH_mm_ss";
     private static final SimpleDateFormat sdf = new SimpleDateFormat(DATE_FORMAT);
-    private static final MinecraftClient mc = getMinecraft();
+    private static final Minecraft mc = getMinecraft();
 
     private final Logger logger;
     private final ReplayMod core;
@@ -60,24 +49,10 @@ public class ConnectionEventHandler {
         this.core = core;
     }
 
-    public void onConnectedToServerEvent(ClientConnection networkManager) {
+    public void onConnectedToServerEvent(NetworkManager networkManager) {
         try {
-            boolean local = networkManager.isLocal();
+            boolean local = networkManager.isLocalChannel();
             if (local) {
-                //#if MC>=10800
-                //#if MC>=11600
-                if (mc.getServer().getWorld(World.OVERWORLD).isDebugWorld()) {
-                //#else
-                //#if MC>=11400
-                //$$ if (mc.getServer().getWorld(DimensionType.OVERWORLD).getGeneratorType() == LevelGeneratorType.DEBUG_ALL_BLOCK_STATES) {
-                //#else
-                //$$ if (mc.getIntegratedServer().getEntityWorld().getWorldType() == WorldType.DEBUG_ALL_BLOCK_STATES) {
-                //#endif
-                //#endif
-                    logger.info("Debug World recording is not supported.");
-                    return;
-                }
-                //#endif
                 if(!core.getSettingsRegistry().get(Setting.RECORD_SINGLEPLAYER)) {
                     logger.info("Singleplayer Recording is disabled");
                     return;
@@ -93,28 +68,19 @@ public class ConnectionEventHandler {
             String serverName = null;
             boolean autoStart = core.getSettingsRegistry().get(Setting.AUTO_START_RECORDING);
             if (local) {
-                //#if MC>=11600
-                worldName = mc.getServer().getSaveProperties().getLevelName();
-                //#else
-                //$$ worldName = mc.getServer().getLevelName();
-                //#endif
+                worldName = mc.getIntegratedServer().getFolderName();
                 serverName = worldName;
-            } else if (mc.getCurrentServerEntry() != null) {
-                ServerInfo serverInfo = mc.getCurrentServerEntry();
-                worldName = serverInfo.address;
-                if (!I18n.translate("selectServer.defaultName").equals(serverInfo.name)) {
-                    serverName = serverInfo.name;
+            } else if (mc.getCurrentServerData() != null) {
+                ServerData serverInfo = mc.getCurrentServerData();
+                worldName = serverInfo.serverIP;
+                if (!I18n.format("selectServer.defaultName").equals(serverInfo.serverName)) {
+                    serverName = serverInfo.serverName;
                 }
 
                 Boolean autoStartServer = ServerInfoExt.from(serverInfo).getAutoRecording();
                 if (autoStartServer != null) {
                     autoStart = autoStartServer;
                 }
-            //#if MC>=11100
-            } else if (mc.isConnectedToRealms()) {
-                // we can't access the server name without tapping too deep in the Realms Library
-                worldName = "A Realms Server";
-            //#endif
             } else {
                 logger.info("Recording not started as the world is neither local nor remote (probably a replay).");
                 return;
@@ -137,7 +103,7 @@ public class ConnectionEventHandler {
             metaData.setCustomServerName(serverName);
             metaData.setGenerator("ReplayMod v" + ReplayMod.instance.getVersion());
             metaData.setDate(System.currentTimeMillis());
-            metaData.setMcVersion(ReplayMod.getMinecraftVersion());
+            metaData.setMcVersion(ReplayMod.instance.getMinecraftVersion());
             packetListener = new PacketListener(core, outputPath, replayFile, metaData);
             Channel channel = ((NetworkManagerAccessor) networkManager).getChannel();
             channel.pipeline().addBefore(packetHandlerKey, "replay_recorder", packetListener);

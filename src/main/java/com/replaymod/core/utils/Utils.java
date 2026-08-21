@@ -25,27 +25,19 @@ import de.johni0702.minecraft.gui.utils.lwjgl.Dimension;
 import de.johni0702.minecraft.gui.utils.lwjgl.ReadableDimension;
 import de.johni0702.minecraft.gui.versions.Image;
 import de.johni0702.minecraft.gui.versions.MCVer;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.util.crash.CrashReport;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.gui.GuiScreen;
+import net.minecraft.crash.CrashReport;
+import net.minecraft.util.ResourceLocation;
 import org.apache.commons.io.Charsets;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-//#if MC>=11400
-//#else
-//$$ import org.lwjgl.input.Keyboard;
-//#endif
+import org.lwjgl.input.Keyboard;
 
-//#if MC>=10800
-import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.client.util.DefaultSkinHelper;
-//#else
-//$$ import net.minecraft.client.Minecraft;
-//$$ import net.minecraft.client.entity.AbstractClientPlayer;
-//$$ import net.minecraft.entity.player.EntityPlayer;
-//#endif
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.entity.AbstractClientPlayer;
+import net.minecraft.entity.player.EntityPlayer;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -181,31 +173,16 @@ public class Utils {
         }
     }
 
-    public static Identifier getResourceLocationForPlayerUUID(UUID uuid) {
-        //#if MC>=10800
-        PlayerListEntry info = getMinecraft().getNetworkHandler().getPlayerListEntry(uuid);
-        Identifier skinLocation;
-        if (info != null && info.hasSkinTexture()) {
-            skinLocation = info.getSkinTexture();
-        } else {
-            skinLocation = DefaultSkinHelper.getTexture(uuid);
+    public static ResourceLocation getResourceLocationForPlayerUUID(UUID uuid) {
+        EntityPlayer player = Minecraft.getMinecraft().theWorld.getPlayerEntityByUUID(uuid);
+        if (player == null || !(player instanceof AbstractClientPlayer)) {
+            return AbstractClientPlayer.locationStevePng;
         }
-        return skinLocation;
-        //#else
-        //$$ EntityPlayer player = Minecraft.getMinecraft().theWorld.getPlayerEntityByUUID(uuid);
-        //$$ if (player != null || !(player instanceof AbstractClientPlayer)) {
-        //$$     return AbstractClientPlayer.locationStevePng;
-        //$$ }
-        //$$ return ((AbstractClientPlayer) player).getLocationSkin();
-        //#endif
+        return ((AbstractClientPlayer) player).getLocationSkin();
     }
 
     public static boolean isCtrlDown() {
-        //#if MC>=11400
-        return Screen.hasControlDown();
-        //#else
-        //$$ return Keyboard.isKeyDown(Keyboard.KEY_LCONTROL) || Keyboard.isKeyDown(Keyboard.KEY_RCONTROL);
-        //#endif
+        return Keyboard.isKeyDown(Keyboard.KEY_LCONTROL) || Keyboard.isKeyDown(Keyboard.KEY_RCONTROL);
     }
 
     public static <T> void addCallback(ListenableFuture<T> future, Consumer<T> onSuccess, Consumer<Throwable> onFailure) {
@@ -224,7 +201,7 @@ public class Utils {
 
     public static GuiInfoPopup error(Logger logger, GuiContainer container, CrashReport crashReport, Runnable onClose) {
         // Convert crash report to string
-        String crashReportStr = crashReport.asString();
+        String crashReportStr = crashReport.getCompleteReport();
 
         // Log via logger
         logger.error(crashReportStr);
@@ -232,10 +209,10 @@ public class Utils {
         // Try to save the crash report
         if (crashReport.getFile() == null) {
             try {
-                File folder = new File(getMinecraft().runDirectory, "crash-reports");
+                File folder = new File(getMinecraft().mcDataDir, "crash-reports");
                 File file = new File(folder, "crash-" + (new SimpleDateFormat("yyyy-MM-dd_HH.mm.ss")).format(new Date()) + "-client.txt");
                 logger.debug("Saving crash report to file: {}", file);
-                crashReport.writeToFile(file);
+                crashReport.saveToFile(file);
             } catch (Throwable t) {
                 logger.error("Saving crash report file:", t);
             }
@@ -245,18 +222,10 @@ public class Utils {
 
         logger.trace("Opening crash report popup GUI");
         GuiCrashReportPopup popup = new GuiCrashReportPopup(container, crashReportStr);
-        Futures.addCallback(popup.getFuture(), new FutureCallback<Void>() {
-            @Override
-            public void onSuccess(@Nullable Void result) {
-                logger.trace("Crash report popup closed");
-                if (onClose != null) {
-                    onClose.run();
-                }
-            }
-
-            @Override
-            public void onFailure(Throwable t) {
-                logger.error("During error popup:", t);
+        popup.onClosed(() -> {
+            logger.trace("Crash report popup closed");
+            if (onClose != null) {
+                onClose.run();
             }
         });
         return popup;
@@ -329,18 +298,10 @@ public class Utils {
         LOGGER.trace("Minimal mode active, denying action, opening popup");
 
         MinimalModeUnsupportedPopup popup = new MinimalModeUnsupportedPopup(container);
-        Futures.addCallback(popup.getFuture(), new FutureCallback<Void>() {
-            @Override
-            public void onSuccess(@Nullable Void result) {
-                LOGGER.trace("Minimal mode popup closed");
-                if (onPopupClosed != null) {
-                    onPopupClosed.run();
-                }
-            }
-
-            @Override
-            public void onFailure(Throwable t) {
-                LOGGER.error("During minimal mode popup:", t);
+        popup.onClosed(() -> {
+            LOGGER.trace("Minimal mode popup closed");
+            if (onPopupClosed != null) {
+                onPopupClosed.run();
             }
         });
         return false;

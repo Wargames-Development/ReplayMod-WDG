@@ -1,8 +1,6 @@
 package com.replaymod.render.gui;
 
 import com.google.common.base.Preconditions;
-import com.google.common.util.concurrent.FutureCallback;
-import com.google.common.util.concurrent.Futures;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.InstanceCreator;
@@ -35,11 +33,10 @@ import de.johni0702.minecraft.gui.utils.lwjgl.Color;
 import de.johni0702.minecraft.gui.utils.lwjgl.Dimension;
 import de.johni0702.minecraft.gui.utils.lwjgl.ReadableColor;
 import de.johni0702.minecraft.gui.utils.lwjgl.ReadableDimension;
-import net.minecraft.client.gui.screen.NoticeScreen;
-import net.minecraft.client.resource.language.I18n;
-import net.minecraft.util.crash.CrashReport;
+import net.minecraft.client.gui.GuiErrorScreen;
+import net.minecraft.client.resources.I18n;
+import net.minecraft.crash.CrashReport;
 
-import javax.annotation.Nullable;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -54,10 +51,6 @@ import java.util.Map;
 
 import static com.replaymod.core.utils.Utils.error;
 import static com.replaymod.render.ReplayModRender.LOGGER;
-
-//#if MC>=11400
-import net.minecraft.text.TranslatableText;
-//#endif
 
 public class GuiRenderSettings extends AbstractGuiPopup<GuiRenderSettings> {
     { disablePopupBackground(); }
@@ -112,7 +105,7 @@ public class GuiRenderSettings extends AbstractGuiPopup<GuiRenderSettings> {
     public final GuiSlider frameRateSlider = new GuiSlider().onValueChanged(new Runnable() {
         @Override
         public void run() {
-            frameRateSlider.setText(I18n.translate("replaymod.gui.rendersettings.framerate")
+            frameRateSlider.setText(I18n.format("replaymod.gui.rendersettings.framerate")
                     + ": " + (frameRateSlider.getValue() + 10));
         }
     }).setSize(122, 20).setSteps(110);
@@ -131,25 +124,13 @@ public class GuiRenderSettings extends AbstractGuiPopup<GuiRenderSettings> {
                     encodingPresetDropdown.getSelectedValue().getFileExtension());
             popup.setFolder(getParentFile(outputFile));
             popup.setFileName(outputFile.getName());
-            Futures.addCallback(
-                    popup.getFuture(),
-                    new FutureCallback<File>() {
-                        @Override
-                        public void onSuccess(@Nullable File result) {
-                            if (result != null) {
-                                if (!result.getName().equals(outputFile.getName())) {
-                                    userDefinedOutputFileName = true;
-                                }
-                                outputFile = result;
-                                outputFileButton.setLabel(result.getName());
-                            }
-                        }
-
-                        @Override
-                        public void onFailure(Throwable t) {
-                            throw new RuntimeException(t);
-                        }
-                    });
+            popup.onAccept(file -> {
+                if (!file.getName().equals(outputFile.getName())) {
+                    userDefinedOutputFileName = true;
+                }
+                outputFile = file;
+                outputFileButton.setLabel(file.getName());
+            });
         }
     });
 
@@ -186,7 +167,7 @@ public class GuiRenderSettings extends AbstractGuiPopup<GuiRenderSettings> {
             .onValueChanged(new Runnable() {
                 @Override
                 public void run() {
-                    sphericalFovSlider.setText(I18n.translate("replaymod.gui.rendersettings.sphericalFov")
+                    sphericalFovSlider.setText(I18n.format("replaymod.gui.rendersettings.sphericalFov")
                             + ": " + (MIN_SPHERICAL_FOV + sphericalFovSlider.getValue() * SPHERICAL_FOV_STEP_SIZE) + "°");
 
                     updateInputs();
@@ -258,17 +239,11 @@ public class GuiRenderSettings extends AbstractGuiPopup<GuiRenderSettings> {
                 videoRenderer.renderVideo();
             } catch (FFmpegWriter.NoFFmpegException e) {
                 LOGGER.error("Rendering video:", e);
-                NoticeScreen errorScreen = new NoticeScreen(
-                        //#if MC>=11400
-                        getScreen()::display,
-                        new TranslatableText("replaymod.gui.rendering.error.title"),
-                        new TranslatableText("replaymod.gui.rendering.error.message")
-                        //#else
-                        //$$ I18n.format("replaymod.gui.rendering.error.title"),
-                        //$$ I18n.format("replaymod.gui.rendering.error.message")
-                        //#endif
+                GuiErrorScreen errorScreen = new GuiErrorScreen(
+                        I18n.format("replaymod.gui.rendering.error.title"),
+                        I18n.format("replaymod.gui.rendering.error.message")
                 );
-                getMinecraft().openScreen(errorScreen);
+                getMinecraft().displayGuiScreen(errorScreen);
             } catch (FFmpegWriter.FFmpegStartupException e) {
                 GuiExportFailed.tryToRecover(e, newSettings -> {
                     // Update settings with fixed ffmpeg arguments
@@ -277,7 +252,7 @@ public class GuiRenderSettings extends AbstractGuiPopup<GuiRenderSettings> {
                     renderButton.onClick();
                 });
             } catch (Throwable t) {
-                error(LOGGER, GuiRenderSettings.this, CrashReport.create(t, "Rendering video"), () -> {});
+                error(LOGGER, GuiRenderSettings.this, CrashReport.makeCrashReport(t, "Rendering video"), () -> {});
                 getScreen().display(); // Re-show the render settings gui and the new error popup
             }
         }
@@ -401,10 +376,10 @@ public class GuiRenderSettings extends AbstractGuiPopup<GuiRenderSettings> {
             case CUBIC:
             case EQUIRECTANGULAR:
             case ODS:
-                stabilizePanel.forEach(IGuiCheckbox.class).setEnabled();
+                stabilizePanel.invokeAll(IGuiCheckbox.class, GuiElement::setEnabled);
                 break;
             default:
-                stabilizePanel.forEach(IGuiCheckbox.class).setDisabled();
+                stabilizePanel.invokeAll(IGuiCheckbox.class, GuiElement::setDisabled);
         }
 
         // Enable/Disable Spherical FOV slider
@@ -421,8 +396,9 @@ public class GuiRenderSettings extends AbstractGuiPopup<GuiRenderSettings> {
 
         // Enable/Disable various options for blend export
         boolean isEXR = encodingPresetDropdown.getSelectedValue() == RenderSettings.EncodingPreset.EXR;
+        boolean isPNG = encodingPresetDropdown.getSelectedValue() == RenderSettings.EncodingPreset.PNG;
         boolean isBlend = renderMethod == RenderSettings.RenderMethod.BLEND;
-        boolean isFFmpeg = !isBlend && !isEXR;
+        boolean isFFmpeg = !isBlend && !isEXR && !isPNG;
         if (isBlend) {
             videoWidth.setDisabled();
             videoHeight.setDisabled();
@@ -432,11 +408,11 @@ public class GuiRenderSettings extends AbstractGuiPopup<GuiRenderSettings> {
         exportArguments.setEnabled(isFFmpeg);
         antiAliasingDropdown.setEnabled(isFFmpeg);
 
-        if (isEXR) {
+        if (isEXR || isPNG) {
             depthMap.setEnabled().setTooltip(null);
         } else {
             depthMap.setDisabled().setTooltip(new GuiTooltip().setColor(Colors.RED)
-                    .setI18nText("replaymod.gui.rendersettings.depthmap.onlyexr"));
+                    .setI18nText("replaymod.gui.rendersettings.depthmap.only_exr_or_png"));
         }
 
         // Enable/Disable export args reset button
@@ -601,7 +577,7 @@ public class GuiRenderSettings extends AbstractGuiPopup<GuiRenderSettings> {
                 serialize || antiAliasingDropdown.isEnabled() ? antiAliasingDropdown.getSelectedValue() : RenderSettings.AntiAliasing.NONE,
                 exportCommand.getText(),
                 exportArguments.getText(),
-                net.minecraft.client.gui.screen.Screen.hasControlDown()
+                net.minecraft.client.gui.GuiScreen.isCtrlKeyDown()
         );
     }
 

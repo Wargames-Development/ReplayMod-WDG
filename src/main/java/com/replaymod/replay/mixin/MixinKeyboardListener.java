@@ -7,35 +7,15 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-//#if MC>=11400
-import net.minecraft.client.Keyboard;
-//#else
-//$$ import net.minecraft.client.Minecraft;
-//#endif
+import net.minecraft.client.Minecraft;
 
-//#if MC>=11400
-@Mixin(Keyboard.class)
-//#else
-//$$ @Mixin(Minecraft.class)
-//#endif
+@Mixin(Minecraft.class)
 public abstract class MixinKeyboardListener {
     @Inject(
-            //#if MC>=11400
-            method = "onKey",
-            //#else
-            //$$ method = "dispatchKeypresses",
-            //#endif
+            method = "dispatchKeypresses",
             at = @At(
                     value = "INVOKE",
-                    //#if MC>=11400
-                    target = "Lnet/minecraft/client/util/ScreenshotUtils;saveScreenshot(Ljava/io/File;IILnet/minecraft/client/gl/Framebuffer;Ljava/util/function/Consumer;)V"
-                    //#else
-                    //#if MC>=11400
-                    //$$ target = "Lnet/minecraft/util/ScreenShotHelper;saveScreenshot(Ljava/io/File;IILnet/minecraft/client/shader/Framebuffer;Ljava/util/function/Consumer;)V"
-                    //#else
-                    //$$ target = "Lnet/minecraft/util/ScreenShotHelper;saveScreenshot(Ljava/io/File;IILnet/minecraft/client/shader/Framebuffer;)Lnet/minecraft/util/text/ITextComponent;"
-                    //#endif
-                    //#endif
+                    target = "Lnet/minecraft/util/ScreenShotHelper;saveScreenshot(Ljava/io/File;IILnet/minecraft/client/shader/Framebuffer;)Lnet/minecraft/util/IChatComponent;"
             ),
             cancellable = true
     )

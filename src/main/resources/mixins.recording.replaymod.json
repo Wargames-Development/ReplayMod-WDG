@@ -5,31 +5,16 @@
   "server": [],
   "client": [
     "AddServerScreenAccessor",
-    "EntityLivingBaseAccessor",
     "IntegratedServerAccessor",
     "NetworkManagerAccessor",
     "SPacketSpawnMobAccessor",
     "SPacketSpawnPlayerAccessor",
     "MixinServerInfo",
-    //#if MC>=11400
-    "MixinDownloadingPackFinder",
-    "MixinMouseHelper",
-    //#endif
-    //#if MC>=10904
-    //#if MC<11400
-    //$$ "MixinPlayerControllerMP",
-    //#endif
-    "MixinWorldClient",
-    //#endif
-    //#if MC<=10710
-    //$$ "MixinGuiScreen",
-    //$$ "MixinS26PacketMapChunkBulk",
-    //#endif
+    "MixinGuiScreen",
+    "MixinS26PacketMapChunkBulk",
     "MixinNetHandlerLoginClient",
     "MixinNetHandlerPlayClient",
-    //#if MC<11400
-    //$$ "MixinNetworkDispatcher",
-    //#endif
+    "MixinNetworkDispatcher",
     "MixinRenderGlobal"
   ],
   "compatibilityLevel": "JAVA_8",

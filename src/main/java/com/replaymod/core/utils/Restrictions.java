@@ -1,40 +1,25 @@
 package com.replaymod.core.utils;
 
-import net.minecraft.network.packet.s2c.play.CustomPayloadS2CPacket;
-import net.minecraft.network.PacketByteBuf;
-//#if MC>=10904
-import net.minecraft.util.Identifier;
-//#endif
+import net.minecraft.network.play.server.S3FPacketCustomPayload;
+import net.minecraft.network.PacketBuffer;
 
-//#if MC<=10710
-//$$ import io.netty.buffer.Unpooled;
-//#endif
-
-import static com.replaymod.core.versions.MCVer.readString;
+import io.netty.buffer.Unpooled;
 
 /**
  * Restrictions set by the server,
  * @see <a href="https://gist.github.com/Johni0702/2547c463e51f65f312cb">Replay Restrictions Gist</a>
  */
 public class Restrictions {
-    //#if MC>=11400
-    public static final Identifier PLUGIN_CHANNEL = new Identifier("replaymod", "restrict");
-    //#else
-    //$$ public static final String PLUGIN_CHANNEL = "Replay|Restrict";
-    //#endif
+    public static final String PLUGIN_CHANNEL = "Replay|Restrict";
     private boolean noXray;
     private boolean noNoclip;
     private boolean onlyFirstPerson;
     private boolean onlyRecordingPlayer;
 
-    public String handle(CustomPayloadS2CPacket packet) {
-        //#if MC>=10800
-        PacketByteBuf buffer = packet.getData();
-        //#else
-        //$$ PacketBuffer buffer = new PacketBuffer(Unpooled.wrappedBuffer(packet.func_149168_d()));
-        //#endif
+    public String handle(S3FPacketCustomPayload packet) {
+        PacketBuffer buffer = new PacketBuffer(Unpooled.wrappedBuffer(packet.func_149168_d()));
         while (buffer.isReadable()) {
-            String name = readString(buffer, 64);
+            String name = com.replaymod.core.versions.MCVer.tryReadString(buffer, 64);
             boolean active = buffer.readBoolean();
 //            if ("no_xray".equals(name)) {
 //                noXray = active;

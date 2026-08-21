@@ -8,7 +8,10 @@ import com.replaymod.replaystudio.filter.SquashFilter;
 import com.replaymod.replaystudio.filter.StreamFilter;
 import com.replaymod.replaystudio.io.ReplayInputStream;
 import com.replaymod.replaystudio.io.ReplayOutputStream;
+import com.replaymod.replaystudio.protocol.Packet;
+import com.replaymod.replaystudio.protocol.PacketType;
 import com.replaymod.replaystudio.protocol.PacketTypeRegistry;
+import com.replaymod.replaystudio.us.myles.ViaVersion.api.protocol.ProtocolVersion;
 import com.replaymod.replaystudio.replay.ReplayFile;
 import com.replaymod.replaystudio.replay.ReplayMetaData;
 import com.replaymod.replaystudio.stream.IteratorStream;
@@ -168,7 +171,7 @@ public class MarkerProcessor {
                                     timeOffset
                             );
                             for (PacketData packet : packets) {
-                                replayOutputStream.write(0, packet.getPacket());
+                                replayOutputStream.write(0, normalizeSynthesized1710ChunkPacket(packet.getPacket()));
                             }
                         }
                         boolean hasFurtherOutputs = outputFileSuffixes.hasNext();
@@ -190,7 +193,7 @@ public class MarkerProcessor {
                                                 nextMarker.getTime()
                                         );
                                         for (PacketData packet : packets) {
-                                            replayOutputStream.write(nextMarker.getTime() - timeOffset, packet.getPacket());
+                                            replayOutputStream.write(nextMarker.getTime() - timeOffset, normalizeSynthesized1710ChunkPacket(packet.getPacket()));
                                         }
                                         cutFilter = null;
                                     }
@@ -261,4 +264,68 @@ public class MarkerProcessor {
 
         return outputPaths;
     }
+    /**
+     * ReplayStudio's legacy PacketChunkData writer uses a VarInt for the compressed-data length
+     * even on pre-1.8 packets. Minecraft 1.7.10 S21PacketChunkData expects a four-byte big-endian
+     * int at that position. SquashFilter-generated chunk snapshots therefore need a tiny framing
+     * correction before they are written back into a processed replay.
+     *
+     * Only packets synthesized by SquashFilter are passed through this method. Ordinary packets
+     * copied from the original recording keep their original, already-valid 1.7.10 wire bytes.
+     */
+    private static Packet normalizeSynthesized1710ChunkPacket(Packet packet) throws IOException {
+        if (packet.getType() != PacketType.ChunkData || packet.atLeast(ProtocolVersion.v1_8)) {
+            return packet;
+        }
+
+        // A valid 1.7.10 big-endian chunk length always begins with 0 for realistic chunk sizes.
+        // ReplayStudio's malformed VarInt begins immediately with its value. This also makes the
+        // guard future-safe if the pinned ReplayStudio implementation is corrected later.
+        try (Packet.Reader probe = packet.reader()) {
+            probe.readInt();
+            probe.readInt();
+            probe.readBoolean();
+            probe.readUnsignedShort();
+            probe.readUnsignedShort();
+            if (probe.readUnsignedByte() == 0) {
+                return packet;
+            }
+        }
+
+        int x;
+        int z;
+        boolean fullChunk;
+        int chunkMask;
+        int extendedChunkMask;
+        int compressedLength;
+        byte[] compressedData;
+
+        try (Packet.Reader in = packet.reader()) {
+            x = in.readInt();
+            z = in.readInt();
+            fullChunk = in.readBoolean();
+            chunkMask = in.readUnsignedShort();
+            extendedChunkMask = in.readUnsignedShort();
+            compressedLength = in.readVarInt();
+            if (compressedLength < 0) {
+                throw new IOException("Negative ReplayStudio 1.7 chunk length: " + compressedLength);
+            }
+            compressedData = in.readBytes(compressedLength);
+        }
+
+        Packet fixed = new Packet(packet.getRegistry(), packet.getType());
+        try (Packet.Writer out = fixed.overwrite()) {
+            out.writeInt(x);
+            out.writeInt(z);
+            out.writeBoolean(fullChunk);
+            out.writeShort(chunkMask);
+            out.writeShort(extendedChunkMask);
+            out.writeInt(compressedLength);
+            out.writeBytes(compressedData);
+        }
+
+        packet.release();
+        return fixed;
+    }
+
 }

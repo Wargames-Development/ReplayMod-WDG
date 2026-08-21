@@ -4,22 +4,10 @@
   "mixins": [],
   "server": [],
   "client": [
-    //#if MC>=11400
-    "AbstractButtonWidgetAccessor",
     "Mixin_ContextualKeyBindings",
-    "MixinGameRenderer",
-    "Mixin_HideDynamicResourcePacks",
-    "Mixin_RegisterDynamicResourcePacks",
-    //#endif
-    //#if MC>=11400
-    "MixinMouse",
-    //#endif
-    //#if MC<10800
-    //$$ "ResourcePackRepositoryAccessor",
-    //#endif
+    "ResourcePackRepositoryAccessor",
     "MixinKeyboardListener",
     "MixinMinecraft",
-    "GuiMainMenuAccessor",
     "GuiScreenAccessor",
     "KeyBindingAccessor",
     "MinecraftAccessor",

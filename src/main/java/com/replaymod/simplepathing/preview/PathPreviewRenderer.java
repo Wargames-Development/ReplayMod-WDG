@@ -1,6 +1,8 @@
 package com.replaymod.simplepathing.preview;
 
+import com.replaymod.core.versions.MCVer.GlStateManager;
 import com.replaymod.core.ReplayMod;
+import com.replaymod.core.events.PostRenderWorldCallback;
 import com.replaymod.core.versions.MCVer;
 import com.replaymod.pathing.properties.CameraProperties;
 import com.replaymod.pathing.properties.SpectatorProperty;
@@ -16,35 +18,25 @@ import com.replaymod.simplepathing.ReplayModSimplePathing;
 import com.replaymod.simplepathing.SPTimeline;
 import com.replaymod.simplepathing.gui.GuiPathing;
 import de.johni0702.minecraft.gui.utils.EventRegistrations;
-import net.minecraft.client.MinecraftClient;
-import com.mojang.blaze3d.platform.GlStateManager;
+import net.minecraft.client.Minecraft;
+import com.replaymod.core.versions.BufferBuilder;
+import net.minecraft.client.renderer.Tessellator;
+import com.replaymod.core.versions.BufferBuilder.VertexFormats;
+import de.johni0702.minecraft.gui.versions.MatrixStack;
 import net.minecraft.entity.Entity;
-import net.minecraft.util.Identifier;
+import net.minecraft.util.ResourceLocation;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.lang3.tuple.Triple;
 import org.lwjgl.opengl.GL11;
-
-//#if MC>=11500
-import com.mojang.blaze3d.systems.RenderSystem;
-import net.minecraft.client.util.math.MatrixStack;
-//#endif
-
-//#if FABRIC>=1
-import com.replaymod.core.events.PostRenderWorldCallback;
-//#else
-//$$ import net.minecraftforge.client.event.RenderWorldLastEvent;
-//$$ import net.minecraftforge.eventbus.api.SubscribeEvent;
-//#endif
 
 import java.util.Comparator;
 import java.util.Optional;
 
 import static com.replaymod.core.ReplayMod.TEXTURE;
-import static com.replaymod.core.versions.MCVer.*;
 
 public class PathPreviewRenderer extends EventRegistrations {
-    private static final Identifier CAMERA_HEAD = new Identifier("replaymod", "camera_head.png");
-    private static final MinecraftClient mc = MCVer.getMinecraft();
+    private static final ResourceLocation CAMERA_HEAD = new ResourceLocation("replaymod", "camera_head.png");
+    private static final Minecraft mc = MCVer.getMinecraft();
 
     private static final int SLOW_PATH_COLOR = 0xffcccc;
     private static final int FAST_PATH_COLOR = 0x660000;
@@ -58,20 +50,11 @@ public class PathPreviewRenderer extends EventRegistrations {
         this.replayHandler = replayHandler;
     }
 
-    //#if FABRIC>=1
     { on(PostRenderWorldCallback.EVENT, this::renderCameraPath); }
-    //#if MC>=11500
     private void renderCameraPath(MatrixStack matrixStack) {
-    //#else
-    //$$ private void renderCameraPath() {
-    //#endif
-    //#else
-    //$$ @SubscribeEvent
-    //$$ public void renderCameraPath(RenderWorldLastEvent event) {
-    //#endif
-        if (!replayHandler.getReplaySender().isAsyncMode() || mc.options.hudHidden) return;
+        if (!replayHandler.getReplaySender().isAsyncMode() || mc.gameSettings.hideGUI) return;
 
-        Entity view = getRenderViewEntity(mc);
+        Entity view = mc.renderViewEntity;
         if (view == null) return;
 
         GuiPathing guiPathing = mod.getGuiPathing();
@@ -86,18 +69,13 @@ public class PathPreviewRenderer extends EventRegistrations {
 
         path.update();
 
-        int renderDistance = mc.options.viewDistance * 16;
+        int renderDistance = mc.gameSettings.renderDistanceChunks * 16;
         int renderDistanceSquared = renderDistance * renderDistance;
 
         Triple<Double, Double, Double> viewPos = Triple.of(
-                Entity_getX(view),
-                //#if MC>=10800 && MC<11500
-                //$$ // Eye height is subtracted to make path appear higher (at eye height) than it actually is (at foot height)
-                //$$ Entity_getY(view) - view.getStandingEyeHeight(),
-                //#else
-                Entity_getY(view),
-                //#endif
-                Entity_getZ(view)
+                view.posX,
+                view.posY,
+                view.posZ
         );
 
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
@@ -105,10 +83,6 @@ public class PathPreviewRenderer extends EventRegistrations {
         try {
             GL11.glDisable(GL11.GL_LIGHTING);
             GL11.glDisable(GL11.GL_TEXTURE_2D);
-
-            //#if MC>=11500
-            RenderSystem.multMatrix(matrixStack.peek().getModel());
-            //#endif
 
             for (PathSegment segment : path.getSegments()) {
                 Interpolator interpolator = segment.getInterpolator();
@@ -199,7 +173,7 @@ public class PathPreviewRenderer extends EventRegistrations {
             }
         } finally {
             GL11.glPopMatrix();
-            GlStateManager.popAttributes();
+            GlStateManager.popAttrib();
         }
     }
 
@@ -227,36 +201,22 @@ public class PathPreviewRenderer extends EventRegistrations {
         if (distanceSquared(view, pos1) > renderDistanceSquared) return;
         if (distanceSquared(view, pos2) > renderDistanceSquared) return;
 
-        BufferBuilder_beginPosCol(GL11.GL_LINES);
+        Tessellator tessellator = Tessellator.instance;
+        BufferBuilder buffer = new BufferBuilder(tessellator);
+        buffer.startDrawing(GL11.GL_LINES /* POSITION_COLOR */);
 
-        BufferBuilder_addPosCol(
-                pos1.getLeft() - view.getLeft(),
-                pos1.getMiddle() - view.getMiddle(),
-                pos1.getRight() - view.getRight(),
-                color >> 16 & 0xff,
-                color >> 8 & 0xff,
-                color & 0xff,
-                255
-        );
-        BufferBuilder_addPosCol(
-                pos2.getLeft() - view.getLeft(),
-                pos2.getMiddle() - view.getMiddle(),
-                pos2.getRight() - view.getRight(),
-                color >> 16 & 0xff,
-                color >> 8 & 0xff,
-                color & 0xff,
-                255
-        );
+        { BufferBuilder $buffer = buffer; double $x = pos1.getLeft() - view.getLeft(); double $y = pos1.getMiddle() - view.getMiddle(); double $z = pos1.getRight() - view.getRight(); $buffer.setColorRGBA(color >> 16 & 0xff, color >> 8 & 0xff, color & 0xff, 255); $buffer.addVertex($x, $y, $z); }
+        { BufferBuilder $buffer = buffer; double $x = pos2.getLeft() - view.getLeft(); double $y = pos2.getMiddle() - view.getMiddle(); double $z = pos2.getRight() - view.getRight(); $buffer.setColorRGBA(color >> 16 & 0xff, color >> 8 & 0xff, color & 0xff, 255); $buffer.addVertex($x, $y, $z); }
 
         GL11.glLineWidth(3);
-        Tessellator_getInstance().draw();
+        tessellator.draw();
     }
 
     private void drawPoint(Triple<Double, Double, Double> view,
                            Triple<Double, Double, Double> pos,
                            Keyframe keyframe) {
 
-        MCVer.bindTexture(TEXTURE);
+        mc.renderEngine.bindTexture(TEXTURE);
 
         float posX = 80f / ReplayMod.TEXTURE_SIZE;
         float posY = 0f;
@@ -275,12 +235,14 @@ public class PathPreviewRenderer extends EventRegistrations {
         float maxX = 0.5f;
         float maxY = 0.5f;
 
-        BufferBuilder_beginPosTex(GL11.GL_QUADS);
+        Tessellator tessellator = Tessellator.instance;
+        BufferBuilder buffer = new BufferBuilder(tessellator);
+        buffer.startDrawing(GL11.GL_QUADS /* POSITION_TEXTURE */);
 
-        BufferBuilder_addPosTex(minX, minY, 0, posX + size, posY + size);
-        BufferBuilder_addPosTex(minX, maxY, 0, posX + size, posY);
-        BufferBuilder_addPosTex(maxX, maxY, 0, posX, posY);
-        BufferBuilder_addPosTex(maxX, minY, 0, posX, posY + size);
+        buffer.addVertexWithUV(minX, minY, 0, posX + size, posY + size);
+        buffer.addVertexWithUV(minX, maxY, 0, posX + size, posY);
+        buffer.addVertexWithUV(maxX, maxY, 0, posX, posY);
+        buffer.addVertexWithUV(maxX, minY, 0, posX, posY + size);
 
         GL11.glPushMatrix();
 
@@ -290,15 +252,10 @@ public class PathPreviewRenderer extends EventRegistrations {
                 pos.getRight() - view.getRight()
         );
         GL11.glNormal3f(0, 1, 0);
-        //#if MC>=11500
-        GL11.glRotatef(-getRenderManager().camera.getYaw(), 0, 1, 0);
-        GL11.glRotatef(getRenderManager().camera.getPitch(), 1, 0, 0);
-        //#else
-        //$$ GL11.glRotatef(-getRenderManager().cameraYaw, 0, 1, 0);
-        //$$ GL11.glRotatef(getRenderManager().cameraPitch, 1, 0, 0);
-        //#endif
+        GL11.glRotatef(-com.replaymod.core.versions.MCVer.getRenderManager(mc).playerViewY, 0, 1, 0);
+        GL11.glRotatef(com.replaymod.core.versions.MCVer.getRenderManager(mc).playerViewX, 1, 0, 0);
 
-        Tessellator_getInstance().draw();
+        tessellator.draw();
 
         GL11.glPopMatrix();
     }
@@ -307,7 +264,7 @@ public class PathPreviewRenderer extends EventRegistrations {
                             Triple<Double, Double, Double> pos,
                             Triple<Float, Float, Float> rot) {
 
-        MCVer.bindTexture(CAMERA_HEAD);
+        mc.renderEngine.bindTexture(CAMERA_HEAD);
 
         GL11.glPushMatrix();
 
@@ -323,12 +280,14 @@ public class PathPreviewRenderer extends EventRegistrations {
 
         //draw the position line
         GL11.glDisable(GL11.GL_TEXTURE_2D);
-        BufferBuilder_beginPosCol(GL11.GL_LINES);
+        Tessellator tessellator = Tessellator.instance;
+        BufferBuilder buffer = new BufferBuilder(tessellator);
+        buffer.startDrawing(GL11.GL_LINES /* POSITION_COLOR */);
 
-        BufferBuilder_addPosCol(0, 0, 0, 0, 255, 0, 170);
-        BufferBuilder_addPosCol(0, 0, 2, 0, 255, 0, 170);
+        { BufferBuilder $buffer = buffer; double $x = 0; double $y = 0; double $z = 0; $buffer.setColorRGBA(0, 255, 0, 170); $buffer.addVertex($x, $y, $z); }
+        { BufferBuilder $buffer = buffer; double $x = 0; double $y = 0; double $z = 2; $buffer.setColorRGBA(0, 255, 0, 170); $buffer.addVertex($x, $y, $z); }
 
-        Tessellator_getInstance().draw();
+        tessellator.draw();
 
         // draw camera cube
         GL11.glEnable(GL11.GL_TEXTURE_2D);
@@ -337,45 +296,45 @@ public class PathPreviewRenderer extends EventRegistrations {
 
         double r = -cubeSize/2;
 
-        BufferBuilder_beginPosTexCol(GL11.GL_QUADS);
+        buffer.startDrawing(GL11.GL_QUADS /* POSITION_TEXTURE_COLOR */);
 
         //back
-        BufferBuilder_addPosTexCol(r, r + cubeSize, r, 3 * 8 / 64f, 8 / 64f, 255, 255, 255, 200);
-        BufferBuilder_addPosTexCol(r + cubeSize, r + cubeSize, r, 4*8/64f, 8/64f, 255, 255, 255, 200);
-        BufferBuilder_addPosTexCol(r + cubeSize, r, r, 4*8/64f, 2*8/64f, 255, 255, 255, 200);
-        BufferBuilder_addPosTexCol(r, r, r, 3*8/64f, 2*8/64f, 255, 255, 255, 200);
+        { BufferBuilder $buffer = buffer; double $x = r; double $y = r + cubeSize; double $z = r; float $u = 3 * 8 / 64f; float $v = 8 / 64f; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
+        { BufferBuilder $buffer = buffer; double $x = r + cubeSize; double $y = r + cubeSize; double $z = r; float $u = 4*8/64f; float $v = 8/64f; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
+        { BufferBuilder $buffer = buffer; double $x = r + cubeSize; double $y = r; double $z = r; float $u = 4*8/64f; float $v = 2*8/64f; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
+        { BufferBuilder $buffer = buffer; double $x = r; double $y = r; double $z = r; float $u = 3*8/64f; float $v = 2*8/64f; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
 
         //front
-        BufferBuilder_addPosTexCol(r + cubeSize, r, r + cubeSize, 2 * 8 / 64f, 2*8/64f, 255, 255, 255, 200);
-        BufferBuilder_addPosTexCol(r + cubeSize, r + cubeSize, r + cubeSize, 2 * 8 / 64f, 8/64f, 255, 255, 255, 200);
-        BufferBuilder_addPosTexCol(r, r + cubeSize, r + cubeSize, 8 / 64f, 8 / 64f, 255, 255, 255, 200);
-        BufferBuilder_addPosTexCol(r, r, r + cubeSize, 8 / 64f, 2*8/64f, 255, 255, 255, 200);
+        { BufferBuilder $buffer = buffer; double $x = r + cubeSize; double $y = r; double $z = r + cubeSize; float $u = 2 * 8 / 64f; float $v = 2*8/64f; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
+        { BufferBuilder $buffer = buffer; double $x = r + cubeSize; double $y = r + cubeSize; double $z = r + cubeSize; float $u = 2 * 8 / 64f; float $v = 8/64f; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
+        { BufferBuilder $buffer = buffer; double $x = r; double $y = r + cubeSize; double $z = r + cubeSize; float $u = 8 / 64f; float $v = 8 / 64f; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
+        { BufferBuilder $buffer = buffer; double $x = r; double $y = r; double $z = r + cubeSize; float $u = 8 / 64f; float $v = 2*8/64f; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
 
         //left
-        BufferBuilder_addPosTexCol(r + cubeSize, r + cubeSize, r, 0, 8/64f, 255, 255, 255, 200);
-        BufferBuilder_addPosTexCol(r + cubeSize, r + cubeSize, r + cubeSize, 8/64f, 8/64f, 255, 255, 255, 200);
-        BufferBuilder_addPosTexCol(r + cubeSize, r, r + cubeSize, 8/64f, 2*8/64f, 255, 255, 255, 200);
-        BufferBuilder_addPosTexCol(r+cubeSize, r, r, 0, 2*8/64f, 255, 255, 255, 200);
+        { BufferBuilder $buffer = buffer; double $x = r + cubeSize; double $y = r + cubeSize; double $z = r; float $u = 0; float $v = 8/64f; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
+        { BufferBuilder $buffer = buffer; double $x = r + cubeSize; double $y = r + cubeSize; double $z = r + cubeSize; float $u = 8/64f; float $v = 8/64f; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
+        { BufferBuilder $buffer = buffer; double $x = r + cubeSize; double $y = r; double $z = r + cubeSize; float $u = 8/64f; float $v = 2*8/64f; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
+        { BufferBuilder $buffer = buffer; double $x = r+cubeSize; double $y = r; double $z = r; float $u = 0; float $v = 2*8/64f; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
 
         //right
-        BufferBuilder_addPosTexCol(r, r + cubeSize, r + cubeSize, 2*8/64f, 8/64f, 255, 255, 255, 200);
-        BufferBuilder_addPosTexCol(r, r + cubeSize, r, 3*8/64f, 8/64f, 255, 255, 255, 200);
-        BufferBuilder_addPosTexCol(r, r, r, 3*8/64f, 2*8/64f, 255, 255, 255, 200);
-        BufferBuilder_addPosTexCol(r, r, r + cubeSize, 2 * 8 / 64f, 2 * 8 / 64f, 255, 255, 255, 200);
+        { BufferBuilder $buffer = buffer; double $x = r; double $y = r + cubeSize; double $z = r + cubeSize; float $u = 2*8/64f; float $v = 8/64f; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
+        { BufferBuilder $buffer = buffer; double $x = r; double $y = r + cubeSize; double $z = r; float $u = 3*8/64f; float $v = 8/64f; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
+        { BufferBuilder $buffer = buffer; double $x = r; double $y = r; double $z = r; float $u = 3*8/64f; float $v = 2*8/64f; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
+        { BufferBuilder $buffer = buffer; double $x = r; double $y = r; double $z = r + cubeSize; float $u = 2 * 8 / 64f; float $v = 2 * 8 / 64f; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
 
         //bottom
-        BufferBuilder_addPosTexCol(r + cubeSize, r, r, 3*8/64f, 0, 255, 255, 255, 200);
-        BufferBuilder_addPosTexCol(r + cubeSize, r, r + cubeSize, 3*8/64f, 8/64f, 255, 255, 255, 200);
-        BufferBuilder_addPosTexCol(r, r, r + cubeSize, 2*8/64f, 8/64f, 255, 255, 255, 200);
-        BufferBuilder_addPosTexCol(r, r, r, 2 * 8 / 64f, 0, 255, 255, 255, 200);
+        { BufferBuilder $buffer = buffer; double $x = r + cubeSize; double $y = r; double $z = r; float $u = 3*8/64f; float $v = 0; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
+        { BufferBuilder $buffer = buffer; double $x = r + cubeSize; double $y = r; double $z = r + cubeSize; float $u = 3*8/64f; float $v = 8/64f; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
+        { BufferBuilder $buffer = buffer; double $x = r; double $y = r; double $z = r + cubeSize; float $u = 2*8/64f; float $v = 8/64f; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
+        { BufferBuilder $buffer = buffer; double $x = r; double $y = r; double $z = r; float $u = 2 * 8 / 64f; float $v = 0; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
 
         //top
-        BufferBuilder_addPosTexCol(r, r + cubeSize, r, 8/64f, 0, 255, 255, 255, 200);
-        BufferBuilder_addPosTexCol(r, r + cubeSize, r + cubeSize, 8/64f, 8/64f, 255, 255, 255, 200);
-        BufferBuilder_addPosTexCol(r + cubeSize, r + cubeSize, r + cubeSize, 2*8/64f, 8/64f, 255, 255, 255, 200);
-        BufferBuilder_addPosTexCol(r + cubeSize, r + cubeSize, r, 2 * 8 / 64f, 0, 255, 255, 255, 200);
+        { BufferBuilder $buffer = buffer; double $x = r; double $y = r + cubeSize; double $z = r; float $u = 8/64f; float $v = 0; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
+        { BufferBuilder $buffer = buffer; double $x = r; double $y = r + cubeSize; double $z = r + cubeSize; float $u = 8/64f; float $v = 8/64f; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
+        { BufferBuilder $buffer = buffer; double $x = r + cubeSize; double $y = r + cubeSize; double $z = r + cubeSize; float $u = 2*8/64f; float $v = 8/64f; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
+        { BufferBuilder $buffer = buffer; double $x = r + cubeSize; double $y = r + cubeSize; double $z = r; float $u = 2 * 8 / 64f; float $v = 0; $buffer.setColorRGBA(255, 255, 255, 200); $buffer.addVertexWithUV($x, $y, $z, $u, $v); }
 
-        Tessellator_getInstance().draw();
+        tessellator.draw();
 
         GL11.glPopMatrix();
     }

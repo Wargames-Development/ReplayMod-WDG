@@ -22,16 +22,11 @@ import de.johni0702.minecraft.gui.popup.GuiFileChooserPopup;
 import de.johni0702.minecraft.gui.utils.lwjgl.ReadableDimension;
 import de.johni0702.minecraft.gui.versions.Image;
 import joptsimple.internal.Strings;
-import net.minecraft.client.resource.language.I18n;
+import net.minecraft.client.resources.I18n;
 import org.apache.commons.io.IOUtils;
 
-//#if MC>=11400
-import net.minecraft.util.Util;
-//#else
-//$$ import org.lwjgl.Sys;
-//#endif
+import org.lwjgl.Sys;
 
-import javax.annotation.Nullable;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
@@ -82,7 +77,7 @@ public class GuiYoutubeUpload extends GuiScreen {
     public final GuiTextArea descriptionField = new GuiTextArea().setMaxCharCount(Integer.MAX_VALUE)
             .setMaxTextWidth(Integer.MAX_VALUE).setMaxTextHeight(Integer.MAX_VALUE);
     {
-        descriptionField.setText(new String[]{I18n.translate("replaymod.gui.videodescription")});
+        descriptionField.setText(new String[]{I18n.format("replaymod.gui.videodescription")});
     }
 
     public final GuiTextField tagsField = new GuiTextField().setI18nHint("replaymod.gui.videotags");
@@ -116,36 +111,27 @@ public class GuiYoutubeUpload extends GuiScreen {
     public final GuiButton thumbnailButton = new GuiButton().onClick(new Runnable() {
         @Override
         public void run() {
-            Futures.addCallback(
-                    GuiFileChooserPopup.openLoadGui(GuiYoutubeUpload.this, "replaymod.gui.load",
-                            ImageIO.getReaderFileSuffixes()).getFuture(),
-                    new FutureCallback<File>() {
-                        @Override
-                        public void onSuccess(@Nullable File result) {
-                            if (result != null) {
-                                thumbnailButton.setLabel(result.getName());
-                                Image image;
-                                try {
-                                    thumbnailImage = IOUtils.toByteArray(new FileInputStream(result));
-                                    ImageInputStream in = ImageIO.createImageInputStream(new ByteArrayInputStream(thumbnailImage));
-                                    ImageReader reader = ImageIO.getImageReaders(in).next();
-                                    thumbnailFormat = reader.getFormatName().toLowerCase();
-                                    image = Image.read(new ByteArrayInputStream(thumbnailImage));
-                                } catch (Throwable t) {
-                                    t.printStackTrace();
-                                    thumbnailImage = null;
-                                    image = null;
-                                }
-                                thumbnail.setTexture(image);
-                                inputValidation.run();
-                            }
-                        }
-
-                        @Override
-                        public void onFailure(Throwable t) {
-                            throw new RuntimeException(t);
-                        }
-                    });
+            GuiFileChooserPopup.openLoadGui(
+                    GuiYoutubeUpload.this,
+                    "replaymod.gui.load",
+                    ImageIO.getReaderFileSuffixes()
+            ).onAccept(file -> {
+                thumbnailButton.setLabel(file.getName());
+                Image image;
+                try {
+                    thumbnailImage = IOUtils.toByteArray(new FileInputStream(file));
+                    ImageInputStream in = ImageIO.createImageInputStream(new ByteArrayInputStream(thumbnailImage));
+                    ImageReader reader = ImageIO.getImageReaders(in).next();
+                    thumbnailFormat = reader.getFormatName().toLowerCase();
+                    image = Image.read(new ByteArrayInputStream(thumbnailImage));
+                } catch (Throwable t) {
+                    t.printStackTrace();
+                    thumbnailImage = null;
+                    image = null;
+                }
+                thumbnail.setTexture(image);
+                inputValidation.run();
+            });
         }
     }).setSize(200, 20).setI18nLabel("replaymod.gui.videothumbnail");
 
@@ -191,7 +177,7 @@ public class GuiYoutubeUpload extends GuiScreen {
     }
 
     private void setState(boolean uploading) {
-        forEach(GuiElement.class).setEnabled(!uploading);
+        invokeAll(GuiElement.class, e -> e.setEnabled(!uploading));
         uploadButton.setEnabled();
         if (uploading) {
             uploadButton.onClick(() -> {
@@ -227,7 +213,7 @@ public class GuiYoutubeUpload extends GuiScreen {
                                 LOGGER.error("Failed to open video URL \"{}\":", url, throwable);
                             }
                             upload = null;
-                            progressBar.setLabel(I18n.translate("replaymod.gui.ytuploadprogress.done", url));
+                            progressBar.setLabel(I18n.format("replaymod.gui.ytuploadprogress.done", url));
                             setState(false);
                         }
 

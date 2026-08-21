@@ -25,9 +25,23 @@ import com.replaymod.render.processor.OpenGlToBitmapProcessor;
 import com.replaymod.render.processor.StereoscopicToBitmapProcessor;
 import com.replaymod.render.utils.PixelBufferObject;
 
+import java.util.Locale;
 import java.util.Map;
 
 public class Pipelines {
+    private static final boolean MAC_OS = System.getProperty("os.name", "")
+            .toLowerCase(Locale.ROOT).contains("mac");
+
+    /**
+     * LWJGL 2 PBO readback can return partially updated frames on modern macOS OpenGL,
+     * producing offline renders made from two different camera moments. Prefer the existing
+     * synchronous glReadPixels capturer on macOS for ordinary colour renders. Depth capture
+     * still requires the PBO path in this 1.7.10 renderer.
+     */
+    private static boolean usePbo(RenderSettings settings) {
+        return settings.isDepthMap() || (PixelBufferObject.SUPPORTED && !MAC_OS);
+    }
+
     public static Pipeline newPipeline(RenderSettings.RenderMethod method, RenderInfo renderInfo, FrameConsumer<BitmapFrame> consumer) {
         switch (method) {
             case DEFAULT:
@@ -50,7 +64,7 @@ public class Pipelines {
         RenderSettings settings = renderInfo.getRenderSettings();
         WorldRenderer worldRenderer = new EntityRendererHandler(settings, renderInfo);
         FrameCapturer<OpenGlFrame> capturer;
-        if (PixelBufferObject.SUPPORTED || settings.isDepthMap()) {
+        if (usePbo(settings)) {
             capturer = new SimplePboOpenGlFrameCapturer(worldRenderer, renderInfo);
         } else {
             capturer = new SimpleOpenGlFrameCapturer(worldRenderer, renderInfo);
@@ -62,7 +76,7 @@ public class Pipelines {
         RenderSettings settings = renderInfo.getRenderSettings();
         WorldRenderer worldRenderer = new EntityRendererHandler(settings, renderInfo);
         FrameCapturer<StereoscopicOpenGlFrame> capturer;
-        if (PixelBufferObject.SUPPORTED || settings.isDepthMap()) {
+        if (usePbo(settings)) {
             capturer = new StereoscopicPboOpenGlFrameCapturer(worldRenderer, renderInfo);
         } else {
             capturer = new StereoscopicOpenGlFrameCapturer(worldRenderer, renderInfo);
@@ -74,7 +88,7 @@ public class Pipelines {
         RenderSettings settings = renderInfo.getRenderSettings();
         WorldRenderer worldRenderer = new EntityRendererHandler(settings, renderInfo);
         FrameCapturer<CubicOpenGlFrame> capturer;
-        if (PixelBufferObject.SUPPORTED || settings.isDepthMap()) {
+        if (usePbo(settings)) {
             capturer = new CubicPboOpenGlFrameCapturer(worldRenderer, renderInfo, settings.getVideoWidth() / 4);
         } else {
             capturer = new CubicOpenGlFrameCapturer(worldRenderer, renderInfo, settings.getVideoWidth() / 4);
@@ -90,7 +104,7 @@ public class Pipelines {
                 settings.getVideoHeight(), settings.getSphericalFovX());
 
         FrameCapturer<CubicOpenGlFrame> capturer;
-        if (PixelBufferObject.SUPPORTED || settings.isDepthMap()) {
+        if (usePbo(settings)) {
             capturer = new CubicPboOpenGlFrameCapturer(worldRenderer, renderInfo, processor.getFrameSize());
         } else {
             capturer = new CubicOpenGlFrameCapturer(worldRenderer, renderInfo, processor.getFrameSize());

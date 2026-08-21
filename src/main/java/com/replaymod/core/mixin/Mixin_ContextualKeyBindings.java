@@ -1,9 +1,8 @@
-//#if MC>=11400
 package com.replaymod.core.mixin;
 
 import com.replaymod.core.ReplayMod;
 import com.replaymod.replay.ReplayModReplay;
-import net.minecraft.client.options.KeyBinding;
+import net.minecraft.client.settings.KeyBinding;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -13,6 +12,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -24,18 +24,23 @@ import java.util.Set;
  */
 @Mixin(KeyBinding.class)
 public class Mixin_ContextualKeyBindings {
-    @Shadow @Final private static Map<String, KeyBinding> keysById;
+    @Shadow @Final private static List<KeyBinding> keybindArray;
+    @Unique private static Collection<KeyBinding> keyBindings() { return Mixin_ContextualKeyBindings.keybindArray; }
 
     @Unique private static final List<KeyBinding> temporarilyRemoved = new ArrayList<>();
 
-    @Inject(method = "updateKeysByCode", at = @At("HEAD"))
+    @Inject(method = "resetKeyBindingArrayAndHash", at = @At("HEAD"))
     private static void preContextualKeyBindings(CallbackInfo ci) {
-        Set<KeyBinding> onlyInReplay = ReplayMod.instance.getKeyBindingRegistry().getOnlyInReplay();
+        ReplayMod mod = ReplayMod.instance;
+        if (mod == null) {
+            return;
+        }
+        Set<KeyBinding> onlyInReplay = mod.getKeyBindingRegistry().getOnlyInReplay();
         if (ReplayModReplay.instance.getReplayHandler() != null) {
             // In replay, remove any conflicting key bindings, so that ours are guaranteed in
-            Mixin_ContextualKeyBindings.keysById.values().removeIf(keyBinding -> {
+            keyBindings().removeIf(keyBinding -> {
                 for (KeyBinding exclusiveBinding : onlyInReplay) {
-                    if (keyBinding.equals(exclusiveBinding) && keyBinding != exclusiveBinding) {
+                    if ((keyBinding.getKeyCode() == exclusiveBinding.getKeyCode()) && keyBinding != exclusiveBinding) {
                         temporarilyRemoved.add(keyBinding);
                         return true;
                     }
@@ -44,20 +49,21 @@ public class Mixin_ContextualKeyBindings {
             });
         } else {
             // Not in a replay, remove all replay-exclusive keybindings
-            for (KeyBinding keyBinding : onlyInReplay) {
-                if (Mixin_ContextualKeyBindings.keysById.remove(keyBinding.getTranslationKey()) != null) {
+            keyBindings().removeIf(keyBinding -> {
+                if (onlyInReplay.contains(keyBinding)) {
                     temporarilyRemoved.add(keyBinding);
+                    return true;
                 }
-            }
+                return false;
+            });
         }
     }
 
-    @Inject(method = "updateKeysByCode", at = @At("RETURN"))
+    @Inject(method = "resetKeyBindingArrayAndHash", at = @At("RETURN"))
     private static void postContextualKeyBindings(CallbackInfo ci) {
         for (KeyBinding keyBinding : temporarilyRemoved) {
-            Mixin_ContextualKeyBindings.keysById.put(keyBinding.getTranslationKey(), keyBinding);
+            keyBindings().add(keyBinding);
         }
         temporarilyRemoved.clear();
     }
 }
-//#endif

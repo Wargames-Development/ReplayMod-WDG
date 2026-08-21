@@ -3,8 +3,9 @@ package com.replaymod.render;
 import com.google.gson.annotations.SerializedName;
 import com.replaymod.core.versions.MCVer;
 import de.johni0702.minecraft.gui.utils.lwjgl.ReadableColor;
-import net.minecraft.client.resource.language.I18n;
+import net.minecraft.client.resources.I18n;
 import net.minecraft.util.Util;
+import cpw.mods.fml.common.versioning.ComparableVersion;
 
 import java.io.File;
 import java.io.IOException;
@@ -19,27 +20,17 @@ import java.util.Optional;
 
 import static com.replaymod.render.ReplayModRender.LOGGER;
 
-//#if MC>=11400
-import org.apache.maven.artifact.versioning.ComparableVersion;
-//#else
-//#if MC>=10800
-//$$ import net.minecraftforge.fml.common.versioning.ComparableVersion;
-//#else
-//$$ import cpw.mods.fml.common.versioning.ComparableVersion;
-//#endif
-//#endif
-
 public class RenderSettings {
     public enum RenderMethod {
         DEFAULT, STEREOSCOPIC, CUBIC, EQUIRECTANGULAR, ODS, BLEND;
 
         @Override
         public String toString() {
-            return I18n.translate("replaymod.gui.rendersettings.renderer." + name().toLowerCase());
+            return I18n.format("replaymod.gui.rendersettings.renderer." + name().toLowerCase());
         }
 
         public String getDescription() {
-            return I18n.translate("replaymod.gui.rendersettings.renderer." + name().toLowerCase() + ".description");
+            return I18n.format("replaymod.gui.rendersettings.renderer." + name().toLowerCase() + ".description");
         }
 
         public boolean isSpherical() {
@@ -52,12 +43,9 @@ public class RenderSettings {
 
         @SuppressWarnings("RedundantIfStatement")
         public boolean isSupported() {
-            //#if MC<10800 || MC>=11500
             if (this == BLEND) {
                 return false;
             }
-            //#endif
-
             return true;
         }
 
@@ -81,7 +69,7 @@ public class RenderSettings {
 
         EXR(null, "exr"),
 
-        PNG("\"%FILENAME%-%06d.png\"", "png");
+        PNG(null, "png");
 
         private final String preset;
         private final String fileExtension;
@@ -107,19 +95,14 @@ public class RenderSettings {
 
         @Override
         public String toString() {
-            return I18n.translate("replaymod.gui.rendersettings.presets." + name().replace('_', '.').toLowerCase());
+            return I18n.format("replaymod.gui.rendersettings.presets." + name().replace('_', '.').toLowerCase());
         }
 
         public boolean isSupported() {
             if (this == BLEND) {
                 return RenderMethod.BLEND.isSupported();
             } else if (this == EXR) {
-                // Need LJWGL 3
-                //#if MC>=11400
-                return true;
-                //#else
-                //$$ return false;
-                //#endif
+                return false;
             } else {
                 return true;
             }
@@ -145,7 +128,7 @@ public class RenderSettings {
 
         @Override
         public String toString() {
-            return I18n.translate("replaymod.gui.rendersettings.antialiasing." + name().toLowerCase());
+            return I18n.format("replaymod.gui.rendersettings.antialiasing." + name().toLowerCase());
         }
     }
 
@@ -297,26 +280,48 @@ public class RenderSettings {
     }
 
     private static String findFFmpeg() {
-        switch (Util.getOperatingSystem()) {
-            case WINDOWS:
-                // Allow windows users to unpack the ffmpeg archive into a sub-folder of their .minecraft folder
-                File dotMinecraft = MCVer.getMinecraft().runDirectory;
+        switch (Util.getOSType()) {
+            case WINDOWS: {
+                // Preserve ReplayMod's historical portable layout first.
+                File dotMinecraft = MCVer.getMinecraft().mcDataDir;
                 File inDotMinecraft = new File(dotMinecraft, "ffmpeg/bin/ffmpeg.exe");
-                if (inDotMinecraft.exists()) {
-                    LOGGER.debug("FFmpeg found in .minecraft/ffmpeg");
+                if (inDotMinecraft.isFile()) {
+                    LOGGER.debug("FFmpeg found in .minecraft/ffmpeg: {}", inDotMinecraft);
                     return inDotMinecraft.getAbsolutePath();
                 }
-                // But a significant amount of people are not even able to follow instruction to do that.
-                // Instead they'll regularly put it at `.minecraft/ffmpeg-version/bin/ffmpeg.exe`
-                // or `.minecraft/ffmpeg/ffmpeg-version/bin/ffmpeg.exe`
-                // So, for support's sake, let's just search the entire .minecraft folder for an `ffmpeg.exe` file.
-                // We retain above check to have a fast path for any old installations.
+
+                // Many Wargames users will use normal Windows package managers instead of
+                // unpacking FFmpeg into .minecraft. GUI launchers do not always inherit the
+                // same PATH as an interactive shell, so resolve common package-manager shims.
+                String localAppData = System.getenv("LOCALAPPDATA");
+                String userProfile = System.getenv("USERPROFILE");
+                String chocolateyInstall = System.getenv("ChocolateyInstall");
+
+                File[] commonWindowsLocations = new File[]{
+                        localAppData == null ? null
+                                : new File(localAppData, "Microsoft/WinGet/Links/ffmpeg.exe"),
+                        userProfile == null ? null
+                                : new File(userProfile, "scoop/shims/ffmpeg.exe"),
+                        chocolateyInstall == null ? null
+                                : new File(chocolateyInstall, "bin/ffmpeg.exe"),
+                        new File("C:/ProgramData/chocolatey/bin/ffmpeg.exe"),
+                        new File("C:/ffmpeg/bin/ffmpeg.exe")
+                };
+                for (File candidate : commonWindowsLocations) {
+                    if (candidate != null && candidate.isFile()) {
+                        LOGGER.debug("Found FFmpeg at {}", candidate);
+                        return candidate.getAbsolutePath();
+                    }
+                }
+
+                // Retain ReplayMod's support-friendly recursive search for users who unpack
+                // versioned ffmpeg folders somewhere beneath .minecraft.
                 try {
-                    Path[] result = new Path[1];
+                    final Path[] result = new Path[1];
                     Files.walkFileTree(dotMinecraft.toPath(), new SimpleFileVisitor<Path>() {
                         @Override
                         public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                            if ("ffmpeg.exe".equals(file.getFileName().toString())) {
+                            if ("ffmpeg.exe".equalsIgnoreCase(file.getFileName().toString())) {
                                 result[0] = file;
                                 return FileVisitResult.TERMINATE;
                             }
@@ -324,48 +329,107 @@ public class RenderSettings {
                         }
                     });
                     if (result[0] != null) {
+                        LOGGER.debug("Found FFmpeg under .minecraft at {}", result[0]);
                         return result[0].toAbsolutePath().toString();
                     }
                 } catch (IOException e) {
                     LOGGER.debug("Error searching .minecraft for ffmpeg.exe:", e);
                 }
+
+                String onPath = findExecutableOnPath("ffmpeg.exe");
+                if (onPath != null) {
+                    return onPath;
+                }
                 break;
-            case OSX:
-                // The PATH doesn't seem to be set as expected on OSX, therefore we check some common locations ourselves
-                for (String path : new String[]{"/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"}) {
+            }
+
+            case OSX: {
+                // Finder/IntelliJ launches do not reliably inherit the user's shell PATH.
+                // Check Apple Silicon Homebrew, Intel Homebrew and system locations explicitly.
+                for (String path : new String[]{
+                        "/opt/homebrew/bin/ffmpeg",
+                        "/usr/local/bin/ffmpeg",
+                        "/usr/bin/ffmpeg"
+                }) {
                     File file = new File(path);
-                    if (file.exists()) {
+                    if (file.isFile()) {
                         LOGGER.debug("Found FFmpeg at {}", path);
-                        return path;
-                    } else {
-                        LOGGER.debug("FFmpeg not located at {}", path);
+                        return file.getAbsolutePath();
                     }
                 }
-                // Homebrew doesn't seem to reliably symlink its installed binaries either
-                File homebrewFolder = new File("/usr/local/Cellar/ffmpeg");
-                String[] homebrewVersions = homebrewFolder.list();
-                if (homebrewVersions != null) {
+
+                // Also inspect both Homebrew Cellar roots in case the symlink is not visible.
+                for (String homebrewRoot : new String[]{
+                        "/opt/homebrew/Cellar/ffmpeg",
+                        "/usr/local/Cellar/ffmpeg"
+                }) {
+                    File homebrewFolder = new File(homebrewRoot);
+                    String[] homebrewVersions = homebrewFolder.list();
+                    if (homebrewVersions == null) {
+                        continue;
+                    }
                     Optional<File> latestOpt = Arrays.stream(homebrewVersions)
-                            .map(ComparableVersion::new) // Convert file name to comparable version
-                            .sorted(Comparator.reverseOrder()) // Sort for latest version
-                            .map(ComparableVersion::toString) // Convert back to file name
-                            .map(v -> new File(new File(homebrewFolder, v), "bin/ffmpeg")) // Convert to binary files
-                            .filter(File::exists) // Filter invalid installations (missing executable)
-                            .findFirst(); // Take first one
+                            .map(ComparableVersion::new)
+                            .sorted(Comparator.reverseOrder())
+                            .map(ComparableVersion::toString)
+                            .map(v -> new File(new File(homebrewFolder, v), "bin/ffmpeg"))
+                            .filter(File::isFile)
+                            .findFirst();
                     if (latestOpt.isPresent()) {
                         File latest = latestOpt.get();
-                        LOGGER.debug("Found {} versions of FFmpeg installed with homebrew, chose {}",
-                                homebrewVersions.length, latest);
+                        LOGGER.debug("Found {} versions of FFmpeg in {}, chose {}",
+                                homebrewVersions.length, homebrewRoot, latest);
                         return latest.getAbsolutePath();
                     }
                 }
+
+                String onPath = findExecutableOnPath("ffmpeg");
+                if (onPath != null) {
+                    return onPath;
+                }
                 break;
-            case LINUX: // Linux users are entrusted to have their PATH configured correctly (most package manager do this)
-            case SOLARIS: // Never heard of anyone running this mod on Solaris having any problems
-            case UNKNOWN: // Unknown OS, just try to use "ffmpeg"
+            }
+
+            case LINUX:
+            case SOLARIS:
+            case UNKNOWN: {
+                String onPath = findExecutableOnPath("ffmpeg");
+                if (onPath != null) {
+                    return onPath;
+                }
+                break;
+            }
         }
+
+        // Preserve ProcessBuilder's ordinary PATH lookup as the last fallback.
         LOGGER.debug("Using default FFmpeg executable");
-        return "ffmpeg";
+        return Util.getOSType() == Util.EnumOS.WINDOWS ? "ffmpeg.exe" : "ffmpeg";
+    }
+
+    private static String findExecutableOnPath(String executable) {
+        String pathValue = System.getenv("PATH");
+        if (pathValue == null || pathValue.isEmpty()) {
+            return null;
+        }
+
+        for (String pathEntry : pathValue.split(java.util.regex.Pattern.quote(File.pathSeparator))) {
+            if (pathEntry == null || pathEntry.isEmpty()) {
+                continue;
+            }
+
+            // Windows PATH entries are often quoted.
+            if (pathEntry.length() >= 2 && pathEntry.startsWith("\"") && pathEntry.endsWith("\"")) {
+                pathEntry = pathEntry.substring(1, pathEntry.length() - 1);
+            }
+
+            File candidate = new File(pathEntry, executable);
+            if (candidate.isFile()) {
+                LOGGER.debug("Found FFmpeg on PATH at {}", candidate);
+                return candidate.getAbsolutePath();
+            }
+        }
+
+        return null;
     }
 
     public RenderMethod getRenderMethod() {

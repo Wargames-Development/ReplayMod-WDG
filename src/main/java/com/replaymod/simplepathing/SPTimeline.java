@@ -28,9 +28,9 @@ import com.replaymod.replaystudio.pathing.property.Property;
 import com.replaymod.replaystudio.util.EntityPositionTracker;
 import com.replaymod.replaystudio.util.Location;
 import com.replaymod.simplepathing.properties.ExplicitInterpolationProperty;
-import net.minecraft.util.crash.CrashReport;
-import net.minecraft.util.crash.CrashReportSection;
-import net.minecraft.util.crash.CrashException;
+import net.minecraft.crash.CrashReport;
+import net.minecraft.crash.CrashReportCategory;
+import net.minecraft.util.ReportedException;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.Validate;
 import org.apache.commons.lang3.tuple.Triple;
@@ -49,7 +49,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-import static com.replaymod.core.versions.MCVer.*;
 import static com.replaymod.replaystudio.pathing.change.RemoveKeyframe.create;
 import static com.replaymod.simplepathing.ReplayModSimplePathing.LOGGER;
 
@@ -672,10 +671,10 @@ public class SPTimeline implements PathingRegistry {
             jsonWriter.endArray();
             jsonWriter.flush();
         } catch (IOException e) {
-            CrashReport crash = CrashReport.create(e, "Serializing interpolator");
-            CrashReportSection category = crash.addElement("Serializing interpolator");
-            addDetail(category, "Interpolator", interpolator::toString);
-            throw new CrashException(crash);
+            CrashReport crash = CrashReport.makeCrashReport(e, "Serializing interpolator");
+            CrashReportCategory category = crash.makeCategory("Serializing interpolator");
+            category.addCrashSectionCallable("Interpolator", interpolator::toString);
+            throw new ReportedException(crash);
         }
 
         return baos.toString();
@@ -687,10 +686,10 @@ public class SPTimeline implements PathingRegistry {
             jsonReader.beginArray();
             return deserializeInterpolator(jsonReader);
         } catch (IOException e) {
-            CrashReport crash = CrashReport.create(e, "De-serializing interpolator");
-            CrashReportSection category = crash.addElement("De-serializing interpolator");
-            addDetail(category, "Interpolator", json::toString);
-            throw new CrashException(crash);
+            CrashReport crash = CrashReport.makeCrashReport(e, "De-serializing interpolator");
+            CrashReportCategory category = crash.makeCategory("De-serializing interpolator");
+            category.addCrashSectionCallable("Interpolator", json::toString);
+            throw new ReportedException(crash);
         }
     }
 }
