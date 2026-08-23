@@ -9,6 +9,7 @@ import com.replaymod.core.mixin.MinecraftAccessor;
 import com.replaymod.core.mixin.TimerAccessor;
 import com.replaymod.core.utils.Restrictions;
 import com.replaymod.replay.camera.CameraEntity;
+import com.replaymod.replay.compat.ForgeReplayPacketBridge;
 import com.replaymod.replaystudio.io.ReplayInputStream;
 import com.replaymod.replaystudio.replay.ReplayFile;
 import de.johni0702.minecraft.gui.utils.EventRegistrations;
@@ -80,8 +81,11 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 
 import static com.replaymod.core.versions.MCVer.*;
+import static com.replaymod.replay.ReplayModReplay.LOGGER;
 import static com.replaymod.replaystudio.util.Utils.readInt;
 
 /**
@@ -107,6 +111,13 @@ public class FullReplaySender extends ChannelDuplexHandler implements ReplaySend
     );
 
     private static int TP_DISTANCE_LIMIT = 128;
+
+    /**
+     * Forge gameplay channels restored during this replay.  Logging only the
+     * first packet per channel makes compatibility visible in logs without
+     * producing one line for every mod packet.
+     */
+    private final Set<String> restoredForgeChannels = new HashSet<>();
 
     /**
      * The replay handler responsible for the current replay.
@@ -461,6 +472,15 @@ public class FullReplaySender extends ChannelDuplexHandler implements ReplaySend
                     }
                 }
                 return null;
+            }
+
+            Packet restoredPacket = ForgeReplayPacketBridge.restoreClientboundForgePacket(packet);
+            if (restoredPacket != packet) {
+                if (restoredForgeChannels.add(channelName)) {
+                    LOGGER.info("Replay Forge compatibility: restored custom payload channel '{}' to FMLProxyPacket",
+                            channelName);
+                }
+                p = restoredPacket;
             }
         }
 
