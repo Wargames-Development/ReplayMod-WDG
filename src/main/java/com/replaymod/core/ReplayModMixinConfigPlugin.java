@@ -20,15 +20,18 @@ public class ReplayModMixinConfigPlugin implements IMixinConfigPlugin {
 
     private final Logger logger = LogManager.getLogger("replaymod/mixin");
     private final boolean hasOF = hasClass("optifine.OptiFineForgeTweaker");
+    private final boolean hasMCHeli = hasClass("mcheli.MCH_ClientProxy");
 
     {
         logger.debug("hasOF: " + hasOF);
+        logger.debug("hasMCHeli: " + hasMCHeli);
     }
 
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
         if (mixinClassName.endsWith("_OF")) return hasOF;
         if (mixinClassName.endsWith("_NoOF")) return !hasOF;
+        if (mixinClassName.endsWith("_MCHeli")) return hasMCHeli;
         return true;
     }
 

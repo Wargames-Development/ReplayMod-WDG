@@ -10,6 +10,8 @@
     "EntityPlayerAccessor",
     "FirstPersonRendererAccessor",
     "MixinItemRendererSpectatedHandState",
+    "MixinRenderManagerReplayViewContext",
+    "MixinMCHClientProxy_MCHeli",
     "MixinEntityRenderer",
     "MixinFMLClientHandler",
     "MixinKeyboardListener",
