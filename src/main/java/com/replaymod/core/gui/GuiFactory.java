@@ -34,7 +34,7 @@ public class GuiFactory implements IModGuiFactory {
 
         @Override
         public void initGui() {
-            new GuiReplaySettings(parent, ReplayMod.instance.getSettingsRegistry()).display();
+            Minecraft.getMinecraft().displayGuiScreen(new com.replaymod.studio.StudioSettings(parent, ReplayMod.instance.getSettingsRegistry()));
         }
     }
 

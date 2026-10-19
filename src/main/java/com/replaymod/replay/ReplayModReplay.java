@@ -174,6 +174,11 @@ public class ReplayModReplay implements Module {
             ModCompat.ModInfoDifference modDifference = new ModCompat.ModInfoDifference(replayFile.getModInfo());
             if (!modDifference.getMissing().isEmpty() || !modDifference.getDiffering().isEmpty()) {
                 GuiModCompatWarning screen = new GuiModCompatWarning(modDifference);
+                screen.cancelButton.onClick(() -> {
+                    try { replayFile.close(); }
+                    catch (IOException error) { LOGGER.error("Closing cancelled replay", error); }
+                    core.getMinecraft().displayGuiScreen(new com.replaymod.studio.ReplayLibrary(null));
+                });
                 screen.loadButton.onClick(() -> {
                     try {
                         startReplay(replayFile, false, asyncMode);

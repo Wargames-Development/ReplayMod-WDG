@@ -21,6 +21,7 @@
     "MainWindowAccessor",
     "WorldRendererAccessor",
     "MixinEffectRenderer",
+    "MixinExportSound",
     "MixinEntityRenderer",
     "MixinOpenGlHelper",
     "MixinRenderManager"

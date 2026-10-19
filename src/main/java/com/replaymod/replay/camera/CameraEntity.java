@@ -385,7 +385,9 @@ public class CameraEntity extends EntityClientPlayerMP {
 
         long now = System.currentTimeMillis();
         long timePassed = now - lastControllerUpdate;
-        cameraController.update(timePassed / 50f);
+        if (!(mc.currentScreen instanceof com.replaymod.studio.StudioScreen)) {
+            cameraController.update(timePassed / 50f);
+        }
         lastControllerUpdate = now;
 
         handleInputEvents();

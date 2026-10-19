@@ -75,6 +75,10 @@ public class VideoRenderer implements RenderInfo {
     private boolean mouseWasGrabbed;
     private boolean debugInfoWasShown;
     private Map<SoundCategory, Float> originalSoundLevels;
+    private com.replaymod.render.audio.ExportAudio audio;
+    private String stage = "";
+    public String getStage() { return stage; }
+    public void setStage(String stage) { this.stage = stage; }
 
     private TimelinePlayer timelinePlayer;
     private Future<Void> timelinePlayerFuture;
@@ -96,6 +100,7 @@ public class VideoRenderer implements RenderInfo {
         this.settings = settings;
         this.replayHandler = replayHandler;
         this.timeline = timeline;
+        com.replaymod.replay.compat.DistantHorizonsReplay.requireTerrain();
         this.gui = new GuiVideoRenderer(this);
         if (settings.getRenderMethod() == RenderSettings.RenderMethod.BLEND) {
             BlendState.setState(new BlendState(settings.getOutputFile()));
@@ -147,6 +152,8 @@ public class VideoRenderer implements RenderInfo {
         ReplayRenderCallback.Pre.EVENT.invoker().beforeRendering(this);
 
         setup();
+        com.replaymod.replay.compat.DistantHorizonsReplay.beginExport();
+        if (settings.isRenderAudio() && settings.getRenderMethod() != RenderSettings.RenderMethod.BLEND) audio = new com.replaymod.render.audio.ExportAudio(this);
 
         // Because this might take some time to prepare we'll render the GUI at least once to not confuse the user
         drawGui();
@@ -178,7 +185,18 @@ public class VideoRenderer implements RenderInfo {
 
         ((WorldRendererAccessor) mc.renderGlobal).setRenderEntitiesStartupCounter(0);
 
+
         renderingPipeline.run();
+
+        if (audio != null) {
+            java.io.File wave = audio.getWaveFile(); audio.close(); audio = null;
+            if (!cancelled && !hasFailed() && ffmpegWriter != null) {
+                stage = "Finishing game audio...";
+                drawGui();
+                com.replaymod.render.audio.AudioMuxer.mux(this, ffmpegWriter.getVideoFile(), wave);
+                stage = "";
+            }
+        }
 
         if (((MinecraftAccessor) mc).getCrashReporter() != null) {
             throw new ReportedException(((MinecraftAccessor) mc).getCrashReporter());
@@ -201,9 +219,10 @@ public class VideoRenderer implements RenderInfo {
 
         return !cancelled;
         } finally {
-            if (!finished && timelinePlayerFuture != null) {
-                cancelled = true;
-                finish();
+            if (!finished) {
+                cancel();
+                try { renderingPipeline.close(); }
+                finally { if (timelinePlayerFuture != null) finish(); }
             }
         }
     }
@@ -230,6 +249,7 @@ public class VideoRenderer implements RenderInfo {
         }
 
         // Updating the timer will cause the timeline player to update the game state
+        if (audio != null) audio.beginFrame(framesDone);
         Timer timer = ((MinecraftAccessor) mc).getTimer();
         timer.updateTimer();
         int elapsedTicks = timer.elapsedTicks;
@@ -243,6 +263,8 @@ public class VideoRenderer implements RenderInfo {
         while (elapsedTicks-- > 0) {
             tick();
         }
+        com.replaymod.replay.compat.ReplayEffects.flush();
+        if (audio != null) audio.endFrame();
 
         // change Minecraft's display size back
         acc.setFramebufferWidth(displayWidthBefore);
@@ -278,10 +300,11 @@ public class VideoRenderer implements RenderInfo {
         }
         Mouse.setGrabbed(false);
 
-        // Mute all sounds except GUI sounds (buttons, etc.)
+        // The offline audio hook suppresses real-time output while retaining category levels.
+        // Silent exports keep the legacy mute path.
         originalSoundLevels = new EnumMap<>(SoundCategory.class);
         for (SoundCategory category : SoundCategory.values()) {
-            if (category != SoundCategory.MASTER) {
+            if (!settings.isRenderAudio() && category != SoundCategory.MASTER) {
                 originalSoundLevels.put(category, mc.gameSettings.getSoundLevel(category));
                 mc.gameSettings.setSoundLevel(category, 0);
             }
@@ -319,6 +342,10 @@ public class VideoRenderer implements RenderInfo {
     }
 
     private void finish() {
+        if (audio != null) {
+            try { audio.close(); } catch (IOException error) { setFailure(error); }
+            audio = null;
+        }
         if (timelinePlayerFuture != null && !timelinePlayerFuture.isDone()) {
             timelinePlayerFuture.cancel(false);
         }
@@ -354,8 +381,8 @@ public class VideoRenderer implements RenderInfo {
         }
 
         try {
-            if (!cancelled && !hasFailed() && ffmpegWriter != null) {
-                new GuiRenderingDone(ReplayModRender.instance, ffmpegWriter.getVideoFile(), totalFrames, settings).display();
+            if (!cancelled && !hasFailed()) {
+                mc.displayGuiScreen(new com.replaymod.studio.StudioRenderDone(ffmpegWriter == null ? settings.getOutputFile() : ffmpegWriter.getVideoFile(), totalFrames));
             }
         } catch (FFmpegWriter.FFmpegStartupException e) {
             setFailure(e);
@@ -364,6 +391,7 @@ public class VideoRenderer implements RenderInfo {
         // Finally, resize the Minecraft framebuffer to the actual width/height of the window
         if (displayWidth > 0 && displayHeight > 0) resizeMainWindow(mc, displayWidth, displayHeight);
         if (guiFramebuffer != null) guiFramebuffer.deleteFramebuffer();
+        gui.releasePreview();
         mc.getFramebuffer().bindFramebuffer(true);
         resetColor();
     }
@@ -386,6 +414,7 @@ public class VideoRenderer implements RenderInfo {
 
     private void tick() {
         mc.runTick();
+        com.replaymod.render.audio.ExportAudio.tick();
     }
 
     public boolean drawGui() {
@@ -402,14 +431,16 @@ public class VideoRenderer implements RenderInfo {
             }
 
             pushMatrix();
+            guiFramebuffer.bindFramebuffer(true);
             clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             enableTexture2D();
             resetColor();
-            guiFramebuffer.bindFramebuffer(true);
 
             mc.entityRenderer.setupOverlayRendering();
 
-            gui.toMinecraft().setWorldAndResolution(mc, window.getScaledWidth(), window.getScaledHeight());
+            if (gui.width != window.getScaledWidth() || gui.height != window.getScaledHeight()) {
+                gui.setWorldAndResolution(mc, window.getScaledWidth(), window.getScaledHeight());
+            }
 
             // Events are polled on 1.13+ in mainWindow.update which is called later
             gui.toMinecraft().handleInput();

@@ -152,6 +152,14 @@ public class PacketListener extends ChannelInboundHandlerAdapter {
         });
     }
 
+    /** Serialize small compatibility manifests through the same ordered writer as packets. */
+    public void saveExtra(String name, byte[] bytes) {
+        saveService.submit(() -> {
+            try { synchronized (replayFile) { try (OutputStream output = replayFile.write(name)) { output.write(bytes); } } }
+            catch (IOException error) { logger.error("Saving replay compatibility data", error); }
+        });
+    }
+
     public void save(Packet packet) {
         // Scheduling save(packet) alone lets a locally injected spawn overtake
         // JoinGame while its recording task is still waiting on the main thread.

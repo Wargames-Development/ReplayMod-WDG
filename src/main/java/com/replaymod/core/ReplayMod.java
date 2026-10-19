@@ -204,7 +204,7 @@ public class ReplayMod implements Module, Scheduler {
     @Override
     public void registerKeyBindings(KeyBindingRegistry registry) {
         registry.registerKeyBinding("replaymod.input.settings", 0, () -> {
-            new GuiReplaySettings(null, settingsRegistry).display();
+            getMinecraft().displayGuiScreen(new com.replaymod.studio.StudioSettings(null, settingsRegistry));
         }, false);
     }
 

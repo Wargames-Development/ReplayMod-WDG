@@ -102,7 +102,13 @@ public class FFmpegWriter implements FrameConsumer<BitmapFrame> {
             rem = TimeUnit.SECONDS.toNanos(30) - (System.nanoTime() - startTime);
         } while (rem > 0);
 
-        process.destroy();
+        try {
+            int exit = process.exitValue();
+            if (!aborted && exit != 0) throw new IOException("FFmpeg failed to finalize the video (exit " + exit + "). " + ffmpegLog);
+        } catch (IllegalThreadStateException stillRunning) {
+            process.destroyForcibly();
+            if (!aborted) throw new IOException("FFmpeg did not finalize the video within 30 seconds.");
+        }
     }
 
     @Override

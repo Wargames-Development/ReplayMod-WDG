@@ -111,6 +111,8 @@ public class ReplayHandler {
     public ReplayHandler(ReplayFile replayFile, boolean asyncMode) throws IOException {
         Preconditions.checkState(mc.isCallingFromMinecraftThread(), "Must be called from Minecraft thread.");
         this.replayFile = replayFile;
+        com.replaymod.replay.compat.ReplayEffects.reset();
+        com.replaymod.replay.compat.DistantHorizonsReplay.prepare(replayFile);
 
         replayDuration = replayFile.getMetaData().getDuration();
 
@@ -129,6 +131,7 @@ public class ReplayHandler {
     }
 
     void restartedReplay() {
+        com.replaymod.replay.compat.ReplayEffects.reset();
         Preconditions.checkState(mc.isCallingFromMinecraftThread(), "Must be called from Minecraft thread.");
 
         channel.close();
@@ -176,6 +179,7 @@ public class ReplayHandler {
         mc.displayGuiScreen(null);
 
         ReplayClosedCallback.EVENT.invoker().replayClosed(this);
+        com.replaymod.replay.compat.DistantHorizonsReplay.close();
     }
 
     private void setup() {
@@ -338,6 +342,8 @@ public class ReplayHandler {
     }
 
     public void doJump(int targetTime, boolean retainCameraPosition) {
+        com.replaymod.replay.compat.ReplayEffects.beginSeek();
+        try {
         FullReplaySender replaySender = fullReplaySender;
 
         if (replaySender.isHurrying()) {
@@ -427,6 +433,7 @@ public class ReplayHandler {
                 // render pass as it's never been a real GuiScreen in the first place.
             }
         }
+        } finally { com.replaymod.replay.compat.ReplayEffects.endSeek(); }
     }
 
     private void skipTeleportInterpolation(Entity entity) {

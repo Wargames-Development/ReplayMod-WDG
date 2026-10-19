@@ -94,17 +94,8 @@ public class GuiPathing {
     public final GuiButton renderButton = new GuiButton().onClick(new Runnable() {
         @Override
         public void run() {
-            Timeline timeline = preparePathsForPlayback(false);
-            if (timeline == null) return;
-            GuiScreen screen = GuiRenderSettings.createBaseScreen();
-            new GuiRenderQueue(screen, replayHandler, () -> preparePathsForPlayback(false)) {
-                @Override
-                protected void close() {
-                    super.close();
-                    getMinecraft().displayGuiScreen(null);
-                }
-            }.open();
-            screen.display();
+            getMinecraft().displayGuiScreen(new com.replaymod.studio.StudioExport(
+                    replayHandler.getOverlay().getStudioEditor(), replayHandler, GuiPathing.this));
         }
     }).setSize(20, 20).setTexture(ReplayMod.TEXTURE, ReplayMod.TEXTURE_SIZE).setSpriteUV(40, 0)
             .setTooltip(new GuiTooltip().setI18nText("replaymod.gui.ingame.menu.renderpath"));
@@ -381,10 +372,13 @@ public class GuiPathing {
             }
         });
 
-        startLoadingEntityTracker();
     }
 
     public void keyframeRepoButtonPressed() {
+        getMinecraft().displayGuiScreen(new com.replaymod.studio.StudioPaths(null, replayHandler));
+    }
+
+    private void legacyKeyframeRepoButtonPressed() {
         try {
             GuiKeyframeRepository gui = new GuiKeyframeRepository(
                     mod.getCurrentTimeline(), replayHandler.getReplayFile(), mod.getCurrentTimeline().getTimeline());
@@ -410,6 +404,21 @@ public class GuiPathing {
     }
 
     public void clearKeyframesButtonPressed() {
+        getMinecraft().displayGuiScreen(new com.replaymod.studio.StudioConfirm(getMinecraft().currentScreen,
+                "CLEAR CAMERA PATH", java.util.Arrays.asList("Clear all keyframes in the current sequence?", "You can undo this action in the cinematic editor."), "Clear path", () -> {
+            SPTimeline current = mod.getCurrentTimeline();
+            current.editAtomically(() -> {
+                for (SPPath path : SPPath.values()) {
+                    java.util.List<Long> times = current.getPath(path).getKeyframes().stream().map(Keyframe::getTime).collect(java.util.stream.Collectors.toList());
+                    for (long time : times) {
+                        if (path == SPPath.TIME) current.removeTimeKeyframe(time); else current.removePositionKeyframe(time);
+                    }
+                }
+            });
+        }));
+    }
+
+    private void legacyClearKeyframesButtonPressed() {
         GuiYesNoPopup.open(replayHandler.getOverlay(),
                 new GuiLabel().setI18nText("replaymod.gui.clearcallback.title").setColor(Colors.BLACK)
         ).setYesI18nLabel("gui.yes").setNoI18nLabel("gui.no").onAccept(() -> {
@@ -423,6 +432,7 @@ public class GuiPathing {
     private int prevSpeed = -1;
     private int prevTime = -1;
     private void checkForAutoSync() {
+        if (getMinecraft().currentScreen instanceof com.replaymod.studio.StudioScreen) return;
         if (!mod.keySyncTime.isAutoActivating()) {
             prevSpeed = -1;
             prevTime = -1;
@@ -505,7 +515,7 @@ public class GuiPathing {
         }).start();
     }
 
-    private Timeline preparePathsForPlayback(boolean ignoreTimeKeyframes) {
+    public Timeline preparePathsForPlayback(boolean ignoreTimeKeyframes) {
         SPTimeline spTimeline = mod.getCurrentTimeline();
 
         if (!validatePathsForPlayback(spTimeline, ignoreTimeKeyframes)) {
@@ -519,6 +529,10 @@ public class GuiPathing {
             timeline.getPaths().forEach(Path::updateAll);
             return timeline;
         } catch (Throwable t) {
+            if (getMinecraft().currentScreen instanceof com.replaymod.studio.StudioScreen) {
+                LOGGER.error("Could not prepare camera path", t);
+                throw new IllegalStateException("Could not prepare this camera path: " + t.getClass().getSimpleName(), t);
+            }
             error(LOGGER, replayHandler.getOverlay(), CrashReport.makeCrashReport(t, "Cloning timeline"), () -> {});
             return null;
         }
@@ -529,7 +543,7 @@ public class GuiPathing {
 
         // Make sure there are at least two position keyframes
         if (timeline.getPositionPath().getSegments().isEmpty()) {
-            GuiInfoPopup.open(replayHandler.getOverlay(), "replaymod.chat.morekeyframes");
+            playbackError("replaymod.chat.morekeyframes");
             return false;
         }
 
@@ -543,7 +557,7 @@ public class GuiPathing {
             int time = keyframe.getValue(TimestampProperty.PROPERTY).orElseThrow(IllegalStateException::new);
             if (time < lastTime) {
                 // We are going backwards in time
-                GuiInfoPopup.open(replayHandler.getOverlay(),
+                playbackError(
                         "replaymod.error.negativetime1",
                         "replaymod.error.negativetime2",
                         "replaymod.error.negativetime3");
@@ -554,18 +568,32 @@ public class GuiPathing {
 
         // Make sure there are at least two time keyframes
         if (timeline.getTimePath().getSegments().isEmpty()) {
-            GuiInfoPopup.open(replayHandler.getOverlay(), "replaymod.chat.morekeyframes");
+            playbackError("replaymod.chat.morekeyframes");
             return false;
         }
 
         return true;
     }
 
+    private void playbackError(String... keys) {
+        if (getMinecraft().currentScreen instanceof com.replaymod.studio.StudioScreen) {
+            throw new IllegalArgumentException(java.util.Arrays.stream(keys).map(I18n::format).collect(java.util.stream.Collectors.joining(" ")));
+        }
+        GuiInfoPopup.open(replayHandler.getOverlay(), keys);
+    }
+
     public void zoomTimeline(double factor) {
         scrollbar.setZoom(scrollbar.getZoom() * factor);
     }
 
+    public boolean isPreviewPlaying() { return player.isActive(); }
+    public long getPreviewTime() { return player.getTimePassed(); }
+    public void stopPreview() {
+        if (player.isActive()) { player.getFuture().cancel(false); player.onTick(); }
+    }
+
     public boolean loadEntityTracker(Runnable thenRun) {
+        if (entityTrackerFuture == null) startLoadingEntityTracker();
         if (entityTracker == null && !errorShown) {
             LOGGER.debug("Entity tracker not yet loaded, delaying...");
             LoadEntityTrackerPopup popup = new LoadEntityTrackerPopup(replayHandler.getOverlay());

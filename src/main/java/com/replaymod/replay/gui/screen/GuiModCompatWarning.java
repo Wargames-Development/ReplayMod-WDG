@@ -15,6 +15,11 @@ import de.johni0702.minecraft.gui.layout.VerticalLayout;
 import java.util.Map;
 
 public class GuiModCompatWarning extends AbstractGuiScreen<GuiModCompatWarning> {
+    private final java.util.List<String> studioWarnings = new java.util.ArrayList<>();
+    @Override public void display() {
+        getMinecraft().displayGuiScreen(new com.replaymod.studio.StudioConfirm(null, "RECORDING MOD DIFFERENCES", studioWarnings,
+                "Load anyway", () -> loadButton.onClick()).onCancel(() -> cancelButton.onClick()));
+    }
     public final GuiVerticalList content = new GuiVerticalList(this).setDrawShadow(true).setDrawSlider(true);
     public final GuiButton loadButton = new GuiButton().setI18nLabel("replaymod.gui.load").setSize(200, 20);
     public final GuiButton cancelButton = new GuiButton().setI18nLabel("gui.cancel").setSize(200, 20);
@@ -36,6 +41,9 @@ public class GuiModCompatWarning extends AbstractGuiScreen<GuiModCompatWarning> 
     }
 
     public GuiModCompatWarning(ModCompat.ModInfoDifference difference) {
+        studioWarnings.add("This recording was made with different mods. Models or entities may be missing.");
+        for (ModInfo missing : difference.getMissing()) studioWarnings.add("Missing: " + missing.getName() + " " + missing.getVersion());
+        for (Map.Entry<ModInfo, String> changed : difference.getDiffering().entrySet()) studioWarnings.add(changed.getKey().getName() + ": recorded " + changed.getKey().getVersion() + ", installed " + changed.getValue());
         VerticalLayout.Data data = new VerticalLayout.Data(0.5);
         GuiPanel content = this.content.getListPanel();
         content.addElements(data, new GuiLabel().setI18nText("replaymod.gui.modwarning.message1"));

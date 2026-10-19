@@ -13,6 +13,7 @@ public class ReplayModCompat implements Module {
 
     @Override
     public void initClient() {
+        com.replaymod.replay.compat.ReplayEffects.register();
         new DisableFastRender().register();
         new HideInvisibleEntities().register();
         DisableBetterSprinting.register();

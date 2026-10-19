@@ -19,8 +19,16 @@ import net.minecraft.client.resources.I18n;
 import java.util.List;
 
 public class GuiReplaySettings extends AbstractGuiScreen<GuiReplaySettings> {
+    private final net.minecraft.client.gui.GuiScreen studioParent;
+    private final SettingsRegistry studioRegistry;
+
+    @Override public void display() {
+        getMinecraft().displayGuiScreen(new com.replaymod.studio.StudioSettings(studioParent, studioRegistry));
+    }
 
     public GuiReplaySettings(final net.minecraft.client.gui.GuiScreen parent, final SettingsRegistry settingsRegistry) {
+        studioParent = parent;
+        studioRegistry = settingsRegistry;
         final GuiButton doneButton = new GuiButton(this).setI18nLabel("gui.done").setSize(200, 20).onClick(new Runnable() {
             @Override
             public void run() {

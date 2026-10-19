@@ -30,6 +30,7 @@ public class Pipeline<R extends Frame, P extends Frame> implements Runnable {
     private final FrameConsumer<P> consumer;
 
     private volatile boolean abort;
+    private boolean closed;
 
     public Pipeline(WorldRenderer worldRenderer, FrameCapturer<R> capturer, FrameProcessor<R, P> processor, FrameConsumer<P> consumer) {
         this.worldRenderer = worldRenderer;
@@ -89,15 +90,20 @@ public class Pipeline<R extends Frame, P extends Frame> implements Runnable {
                 processService.shutdownNow();
                 Thread.currentThread().interrupt();
             }
-            try {
-                worldRenderer.close();
-                capturer.close();
-                processor.close();
-                consumer.close();
-            } catch (Throwable t) {
-                throw new ReportedException(CrashReport.makeCrashReport(t, "Cleaning up rendering pipeline"));
-            }
+            close();
         }
+    }
+
+    /** Also used when setup fails before run() takes ownership of the pipeline. */
+    public synchronized void close() {
+        if (closed) return;
+        closed = true;
+        Throwable failure = null;
+        for (AutoCloseable resource : new AutoCloseable[]{worldRenderer, capturer, processor, consumer}) {
+            try { resource.close(); }
+            catch (Throwable error) { if (failure == null) failure = error; else failure.addSuppressed(error); }
+        }
+        if (failure != null) throw new ReportedException(CrashReport.makeCrashReport(failure, "Cleaning up rendering pipeline"));
     }
 
     public void cancel() {

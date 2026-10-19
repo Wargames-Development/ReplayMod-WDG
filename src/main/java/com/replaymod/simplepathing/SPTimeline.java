@@ -50,12 +50,31 @@ import java.util.Optional;
 import java.util.Set;
 
 import static com.replaymod.replaystudio.pathing.change.RemoveKeyframe.create;
-import static com.replaymod.simplepathing.ReplayModSimplePathing.LOGGER;
 
 /**
  * Simplified timeline abstraction used in the SimplePathing module.
  */
 public class SPTimeline implements PathingRegistry {
+    private static final org.apache.logging.log4j.Logger LOGGER = org.apache.logging.log4j.LogManager.getLogger();
+    private List<Change> studioEdit;
+
+    /** Groups paired camera/time edits into one undo step. Changes are already applied. */
+    public void recordAppliedChange(Change change) {
+        if (studioEdit == null) timeline.pushChange(change);
+        else studioEdit.add(change);
+    }
+
+    public void editAtomically(Runnable edit) {
+        Preconditions.checkState(studioEdit == null, "An edit is already in progress");
+        studioEdit = new ArrayList<>();
+        try {
+            edit.run();
+            if (!studioEdit.isEmpty()) timeline.pushChange(CombinedChange.createFromApplied(studioEdit.toArray(new Change[0])));
+        } catch (RuntimeException failure) {
+            for (int i = studioEdit.size() - 1; i >= 0; i--) studioEdit.get(i).undo(timeline);
+            throw failure;
+        } finally { studioEdit = null; }
+    }
     public enum SPPath {
         TIME,
         POSITION,
@@ -119,7 +138,7 @@ public class SPTimeline implements PathingRegistry {
         this.defaultInterpolatorType = Validate.notNull(defaultInterpolatorType);
 
         if (prevType != null && prevType != this.defaultInterpolatorType) {
-            timeline.pushChange(updateInterpolators());
+            recordAppliedChange(updateInterpolators());
         }
     }
 
@@ -197,7 +216,7 @@ public class SPTimeline implements PathingRegistry {
         specPosUpdate.apply(timeline);
         change = CombinedChange.createFromApplied(change, specPosUpdate);
 
-        timeline.pushChange(change);
+        recordAppliedChange(change);
     }
 
     public Change updatePositionKeyframe(long time, double posX, double posY, double posZ,
@@ -216,6 +235,14 @@ public class SPTimeline implements PathingRegistry {
                 .done();
         change.apply(timeline);
         return change;
+    }
+
+    public Change detachSpectatorKeyframe(long time) {
+        Keyframe keyframe = positionPath.getKeyframe(time);
+        Preconditions.checkState(keyframe != null, "No camera keyframe at that time");
+        Change change = UpdateKeyframeProperties.create(positionPath, keyframe).removeProperty(SpectatorProperty.PROPERTY).done();
+        change.apply(timeline);
+        return CombinedChange.createFromApplied(change, updateInterpolators());
     }
 
     public void removePositionKeyframe(long time) {
@@ -237,7 +264,7 @@ public class SPTimeline implements PathingRegistry {
         specPosUpdate.apply(timeline);
         change = CombinedChange.createFromApplied(change, specPosUpdate);
 
-        timeline.pushChange(change);
+        recordAppliedChange(change);
     }
 
     public void addTimeKeyframe(long time, int replayTime) {
@@ -272,7 +299,7 @@ public class SPTimeline implements PathingRegistry {
         specPosUpdate.apply(timeline);
         change = CombinedChange.createFromApplied(change, specPosUpdate);
 
-        timeline.pushChange(change);
+        recordAppliedChange(change);
     }
 
     public Change updateTimeKeyframe(long time, int replayTime) {
@@ -304,7 +331,7 @@ public class SPTimeline implements PathingRegistry {
         specPosUpdate.apply(timeline);
         change = CombinedChange.createFromApplied(change, specPosUpdate);
 
-        timeline.pushChange(change);
+        recordAppliedChange(change);
     }
 
     public Change setInterpolatorToDefault(long time) {

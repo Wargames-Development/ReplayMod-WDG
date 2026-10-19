@@ -163,6 +163,10 @@ public class RenderSettings {
     private final String exportArguments;
 
     private final boolean highPerformance;
+    // Null from older saved settings intentionally enables the new audio exporter.
+    private Boolean renderAudio;
+    public boolean isRenderAudio() { return renderAudio == null || renderAudio; }
+    public void setRenderAudio(boolean enabled) { renderAudio = enabled; }
 
     public RenderSettings(
             RenderMethod renderMethod,

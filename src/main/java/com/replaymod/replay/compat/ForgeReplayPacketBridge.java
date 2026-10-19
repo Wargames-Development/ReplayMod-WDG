@@ -41,6 +41,7 @@ public final class ForgeReplayPacketBridge {
 
         S3FPacketCustomPayload payload = (S3FPacketCustomPayload) packet;
         String channel = payload.func_149169_c();
+        ReplayEffects.packet(channel, payload.func_149168_d());
 
         if (!isModPayloadChannel(channel)) {
             return packet;

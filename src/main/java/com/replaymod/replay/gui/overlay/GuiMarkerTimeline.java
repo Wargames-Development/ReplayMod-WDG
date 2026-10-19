@@ -28,6 +28,16 @@ import java.util.function.Consumer;
 import static de.johni0702.minecraft.gui.utils.Utils.clamp;
 
 public class GuiMarkerTimeline extends AbstractGuiTimeline<GuiMarkerTimeline> implements Draggable, Typeable {
+    public Set<Marker> getStudioMarkers() { return new HashSet<>(markers); }
+    public void updateStudioMarker(Marker previous, Marker replacement) throws IOException {
+        Set<Marker> updated = new HashSet<>(markers);
+        if (previous != null) updated.remove(previous);
+        if (replacement != null) updated.add(replacement);
+        if (replayHandler != null) replayHandler.getReplayFile().writeMarkers(updated);
+        else saveMarkers.accept(updated);
+        markers.clear(); markers.addAll(updated);
+        selectedMarker = null;
+    }
     protected static final int TEXTURE_MARKER_X = 109;
     protected static final int TEXTURE_MARKER_Y = 20;
     protected static final int TEXTURE_MARKER_SELECTED_X = 114;

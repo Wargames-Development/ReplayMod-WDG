@@ -85,7 +85,7 @@ public class ReplayModSimplePathing extends EventRegistrations implements Module
     public void registerKeyBindings(KeyBindingRegistry registry) {
         pathPreview.registerKeyBindings(registry);
         core.getKeyBindingRegistry().registerKeyBinding("replaymod.input.keyframerepository", Keyboard.KEY_X, () -> {
-            if (guiPathing != null) guiPathing.keyframeRepoButtonPressed();
+            if (guiPathing != null) core.getMinecraft().displayGuiScreen(new com.replaymod.studio.StudioPaths(null, ReplayModReplay.instance.getReplayHandler()));
         }, true);
         core.getKeyBindingRegistry().registerKeyBinding("replaymod.input.clearkeyframes", Keyboard.KEY_C, () -> {
             if (guiPathing != null) guiPathing.clearKeyframesButtonPressed();
@@ -99,15 +99,18 @@ public class ReplayModSimplePathing extends EventRegistrations implements Module
             settingsRegistry.save();
         });
         core.getKeyBindingRegistry().registerRaw(Keyboard.KEY_DELETE, () ->
-                guiPathing != null && guiPathing.deleteButtonPressed());
+                deleteStudioShot());
         keyPositionKeyframe = core.getKeyBindingRegistry().registerKeyBinding("replaymod.input.positionkeyframe", Keyboard.KEY_I, () -> {
-            if (guiPathing != null) guiPathing.toggleKeyframe(SPPath.POSITION, false);
+            if (guiPathing != null) com.replaymod.studio.CinematicEditor.captureCurrentShot(ReplayModReplay.instance.getReplayHandler());
         }, true);
         core.getKeyBindingRegistry().registerKeyBinding("replaymod.input.positiononlykeyframe", 0, () -> {
             if (guiPathing != null) guiPathing.toggleKeyframe(SPPath.POSITION, true);
         }, true);
         keyTimeKeyframe = core.getKeyBindingRegistry().registerKeyBinding("replaymod.input.timekeyframe", Keyboard.KEY_O, () -> {
-            if (guiPathing != null) guiPathing.toggleKeyframe(SPPath.TIME, false);
+            if (guiPathing != null) {
+                com.replaymod.studio.CinematicEditor editor = ReplayModReplay.instance.getReplayHandler().getOverlay().getStudioEditor();
+                core.getMinecraft().displayGuiScreen(editor); editor.focusReplayClock();
+            }
         }, true);
         core.getKeyBindingRegistry().registerKeyBinding("replaymod.input.bothkeyframes", 0, () -> {
             if (guiPathing != null) {
@@ -141,6 +144,12 @@ public class ReplayModSimplePathing extends EventRegistrations implements Module
             }
             return false;
         });
+    }
+
+    private boolean deleteStudioShot() {
+        if (guiPathing == null || currentTimeline == null || getSelectedPath() == null) return false;
+        new com.replaymod.studio.ShotModel(currentTimeline).remove(getSelectedTime());
+        setSelected(null, 0); return true;
     }
 
     { on(ReplayOpenedCallback.EVENT, this::onReplayOpened); }

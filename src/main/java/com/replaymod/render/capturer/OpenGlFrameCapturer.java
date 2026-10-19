@@ -77,21 +77,34 @@ public abstract class OpenGlFrameCapturer<F extends Frame, D extends CaptureData
     }
 
     protected OpenGlFrame renderFrame(int frameId, float partialTicks, D captureData) {
-        resizeMainWindow(mc, getFrameWidth(), getFrameHeight());
-
-        pushMatrix();
-        try {
-            frameBuffer().bindFramebuffer(true);
+        com.replaymod.render.rendering.VideoRenderer renderer = renderInfo instanceof com.replaymod.render.rendering.VideoRenderer ? (com.replaymod.render.rendering.VideoRenderer) renderInfo : null;
+        long nextProgress = 0;
+        do {
+            resizeMainWindow(mc, getFrameWidth(), getFrameHeight());
+            pushMatrix();
             try {
-                clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-                enableTexture2D();
-                worldRenderer.renderWorld(partialTicks, captureData);
+                frameBuffer().bindFramebuffer(true);
+                try {
+                    clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+                    enableTexture2D();
+                    worldRenderer.renderWorld(partialTicks, captureData);
+                } finally {
+                    frameBuffer().unbindFramebuffer();
+                }
             } finally {
-                frameBuffer().unbindFramebuffer();
+                popMatrix();
             }
-        } finally {
-            popMatrix();
-        }
+
+            if (renderer == null || com.replaymod.replay.compat.DistantHorizonsReplay.renderReady()) break;
+            renderer.setStage("Loading Distant Horizons terrain for this camera view...");
+            if (System.currentTimeMillis() >= nextProgress) {
+                if (!renderer.drawGui()) throw new IllegalStateException("Render cancelled while loading LOD terrain.");
+                nextProgress = System.currentTimeMillis() + 200;
+            }
+            try { Thread.sleep(10); }
+            catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new IllegalStateException("Interrupted while loading LOD terrain", interrupted); }
+        } while (true);
+        if (renderer != null) renderer.setStage("");
 
         return captureFrame(frameId, captureData);
     }

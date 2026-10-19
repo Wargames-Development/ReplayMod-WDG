@@ -27,14 +27,15 @@ public class ScreenshotRenderer implements RenderInfo {
     }
 
     public boolean renderScreenshot() throws Throwable {
+        Window window = new com.replaymod.core.versions.Window(mc);
+        int widthBefore = window.getFramebufferWidth();
+        int heightBefore = window.getFramebufferHeight();
+        boolean hideGUIBefore = mc.gameSettings.hideGUI;
+        ForceChunkLoadingHook clrg = null;
         try {
-            Window window = new com.replaymod.core.versions.Window(mc);
-            int widthBefore = window.getFramebufferWidth();
-            int heightBefore = window.getFramebufferHeight();
-            boolean hideGUIBefore = mc.gameSettings.hideGUI;
             mc.gameSettings.hideGUI = true;
 
-            ForceChunkLoadingHook clrg = new ForceChunkLoadingHook(mc.renderGlobal);
+            clrg = new ForceChunkLoadingHook(mc.renderGlobal);
 
             if (settings.getRenderMethod() == RenderSettings.RenderMethod.BLEND) {
                 BlendState.setState(new BlendState(settings.getOutputFile()));
@@ -44,15 +45,17 @@ public class ScreenshotRenderer implements RenderInfo {
                         new ScreenshotWriter(settings.getOutputFile())).run();
             }
 
-            clrg.uninstall();
-
-            mc.gameSettings.hideGUI = hideGUIBefore;
-            resizeMainWindow(mc, widthBefore, heightBefore);
             return true;
         } catch (OutOfMemoryError e) {
             e.printStackTrace();
             CrashReport report = CrashReport.makeCrashReport(e, "Creating Equirectangular Screenshot");
             MCVer.getMinecraft().crashed(report);
+        } finally {
+            if (clrg != null) clrg.uninstall();
+            mc.gameSettings.hideGUI = hideGUIBefore;
+            resizeMainWindow(mc, widthBefore, heightBefore);
+            mc.getFramebuffer().bindFramebuffer(true);
+            MCVer.GlStateManager.resetColor();
         }
         return false;
     }

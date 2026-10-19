@@ -21,6 +21,8 @@ public class ReplayModMixinConfigPlugin implements IMixinConfigPlugin {
     private final Logger logger = LogManager.getLogger("replaymod/mixin");
     private final boolean hasOF = hasClass("optifine.OptiFineForgeTweaker");
     private final boolean hasMCHeli = hasClass("mcheli.MCH_ClientProxy");
+    private final boolean hasFMUR = hasClass("com.flansmod.client.TickHandlerClient");
+    private final boolean hasDH = hasClass("com.seibel.distanthorizons.forge17.ForgeClientProxy");
 
     {
         logger.debug("hasOF: " + hasOF);
@@ -32,6 +34,8 @@ public class ReplayModMixinConfigPlugin implements IMixinConfigPlugin {
         if (mixinClassName.endsWith("_OF")) return hasOF;
         if (mixinClassName.endsWith("_NoOF")) return !hasOF;
         if (mixinClassName.endsWith("_MCHeli")) return hasMCHeli;
+        if (mixinClassName.endsWith("_FMUR")) return hasFMUR;
+        if (mixinClassName.endsWith("_DH")) return hasDH;
         return true;
     }
 

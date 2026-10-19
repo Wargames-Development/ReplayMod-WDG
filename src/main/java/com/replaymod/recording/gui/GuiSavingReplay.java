@@ -44,7 +44,7 @@ public class GuiSavingReplay {
 
     private final GuiLabel label = new GuiLabel()
             .setI18nText("replaymod.gui.replaysaving.title")
-            .setColor(Colors.BLACK);
+            .setColor(Colors.WHITE);
 
     private final GuiProgressBar progressBar = new GuiProgressBar()
             .setHeight(14);
@@ -66,6 +66,7 @@ public class GuiSavingReplay {
 
     public void close() {
         core.getBackgroundProcesses().removeProcess(panel);
+        if (mc.currentScreen instanceof com.replaymod.studio.ReplayLibrary) ((com.replaymod.studio.ReplayLibrary) mc.currentScreen).refreshFiles();
         AbstractGuiScreen<?> currentScreen = GuiScreen.from(mc.currentScreen);
         if (currentScreen instanceof GuiReplayViewer) {
             ((GuiReplayViewer) currentScreen).list.load();
@@ -77,6 +78,20 @@ public class GuiSavingReplay {
     }
 
     public void presentRenameDialog(List<Pair<Path, ReplayMetaData>> outputPaths) {
+        close();
+        if (!core.getSettingsRegistry().get(Setting.RENAME_DIALOG) || outputPaths.isEmpty()) return;
+        java.util.List<Path> paths = outputPaths.stream().map(Pair::getKey).collect(java.util.stream.Collectors.toList());
+        mc.displayGuiScreen(new com.replaymod.studio.StudioRecordingNames(mc.currentScreen, paths, (path, name) -> {
+            try {
+                Path destination = core.getReplayFolder().resolve(Utils.replayNameToFileName(name));
+                if (destination.toAbsolutePath().normalize().equals(path.toAbsolutePath().normalize())) return;
+                for (int i = 1; Files.exists(destination); i++) destination = core.getReplayFolder().resolve(Utils.replayNameToFileName(name + " (" + i + ")"));
+                Files.move(path, destination);
+            } catch (IOException failure) { throw new IllegalStateException("Recording rename failed: " + failure.getMessage(), failure); }
+        }));
+    }
+
+    private void legacyPresentRenameDialog(List<Pair<Path, ReplayMetaData>> outputPaths) {
         panel.removeElement(progressBar);
 
         link(outputPaths.stream().map(it -> addOutput(it.getKey(), it.getValue())).toArray(Focusable[]::new));

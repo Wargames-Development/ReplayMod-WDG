@@ -20,6 +20,6 @@ public class AdvancedScreenshots implements Extra {
     }
 
     private void takeScreenshot() {
-        ReplayMod.instance.runLater(() -> new GuiCreateScreenshot(mod).open());
+        ReplayMod.instance.runLater(() -> net.minecraft.client.Minecraft.getMinecraft().displayGuiScreen(new com.replaymod.studio.StudioScreenshot()));
     }
 }

@@ -64,6 +64,14 @@ public class GuiReplayOverlay extends AbstractGuiOverlay<GuiReplayOverlay> {
 
     private final EventHandler eventHandler = new EventHandler();
     private boolean hidden;
+    private com.replaymod.studio.CinematicEditor studioEditor;
+
+    public com.replaymod.studio.CinematicEditor getStudioEditor() {
+        if (studioEditor == null) studioEditor = new com.replaymod.studio.CinematicEditor(mod.getReplayHandler());
+        if (!com.replaymod.simplepathing.ReplayModSimplePathing.instance.getGuiPathing().isPreviewPlaying()) mod.getReplayHandler().getReplaySender().setReplaySpeed(0);
+        return studioEditor;
+    }
+    public void resetStudioEditor() { studioEditor = null; }
 
     public GuiReplayOverlay(final ReplayHandler replayHandler) {
         timeline = new GuiMarkerTimeline(replayHandler){
@@ -159,6 +167,10 @@ public class GuiReplayOverlay extends AbstractGuiOverlay<GuiReplayOverlay> {
 
     @Override
     public void draw(GuiRenderer renderer, ReadableDimension size, RenderInfo renderInfo) {
+        // The native studio owns replay interaction. Keep the legacy overlay as
+        // a data/API adapter for existing modules, without drawing two interfaces.
+        if (com.replaymod.simplepathing.ReplayModSimplePathing.instance != null
+                && com.replaymod.simplepathing.ReplayModSimplePathing.instance.getGuiPathing() != null) return;
         // Do not render overlay if all hud, or this one specifically, is hidden and we're not in some popup
         if ((getMinecraft().gameSettings.hideGUI || hidden) && isAllowUserInput()) {
             // Note that this only applies to when the mouse is visible, otherwise
@@ -166,6 +178,21 @@ public class GuiReplayOverlay extends AbstractGuiOverlay<GuiReplayOverlay> {
             return;
         }
         super.draw(renderer, size, renderInfo);
+    }
+
+    @Override
+    public void setMouseVisible(boolean visible) {
+        // The studio owns native mouse input. Legacy preview callbacks must not
+        // replace it with jGui's invisible overlay input screen.
+        if (visible && getMinecraft().currentScreen instanceof com.replaymod.studio.StudioScreen) return;
+        if (visible && getMinecraft().currentScreen == null && mod.getReplayHandler() != null
+                && com.replaymod.simplepathing.ReplayModSimplePathing.instance != null
+                && com.replaymod.simplepathing.ReplayModSimplePathing.instance.getGuiPathing() != null) {
+            super.setMouseVisible(false);
+            getMinecraft().displayGuiScreen(getStudioEditor());
+            return;
+        }
+        super.setMouseVisible(visible);
     }
 
     @Override
@@ -205,6 +232,12 @@ public class GuiReplayOverlay extends AbstractGuiOverlay<GuiReplayOverlay> {
 
         @SubscribeEvent
         public void onGuiOpen(GuiOpenEvent event) {
+            if (event.gui instanceof net.minecraft.client.gui.GuiIngameMenu && mod.getReplayHandler() != null
+                    && com.replaymod.simplepathing.ReplayModSimplePathing.instance.getGuiPathing() != null) {
+                event.setCanceled(true);
+                getMinecraft().displayGuiScreen(new com.replaymod.studio.StudioPause(mod.getReplayHandler()));
+                return;
+            }
             // A mod can still open chat directly after the raw key callback.
             // Keep the overlay's input screen so timeline buttons receive clicks.
             if (event.gui instanceof GuiChat) {

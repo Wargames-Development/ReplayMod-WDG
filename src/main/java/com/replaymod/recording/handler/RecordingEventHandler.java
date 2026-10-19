@@ -42,6 +42,7 @@ public class RecordingEventHandler extends EventRegistrations {
     private Double lastX, lastY, lastZ;
     private ItemStack[] playerItems = new ItemStack[6];
     private int ticksSinceLastCorrection;
+    private int lodTicks;
     private boolean wasSleeping;
     private int lastRiding = -1;
     private Integer rotationYawHeadBefore;
@@ -79,6 +80,7 @@ public class RecordingEventHandler extends EventRegistrations {
     { on(PreTickCallback.EVENT, this::onPlayerTick); }
     private void onPlayerTick() {
         if (mc.thePlayer == null) return;
+        if (++lodTicks % 20 == 0) com.replaymod.replay.compat.DistantHorizonsReplay.record(packetListener);
         EntityPlayerSP player = mc.thePlayer;
         try {
 

@@ -166,7 +166,7 @@ public class GuiHandler extends EventRegistrations {
 
             GuiReplayButton replayButton = new GuiReplayButton();
             replayButton
-                    .onClick(() -> new GuiReplayViewer(mod).display())
+                    .onClick(() -> getMinecraft().displayGuiScreen(new com.replaymod.studio.ReplayLibrary(null)))
                     .setTooltip(new GuiTooltip().setI18nText("replaymod.gui.replayviewer"));
 
             vanillaGui.setLayout(new CustomLayout<de.johni0702.minecraft.gui.container.GuiScreen>(vanillaGui.getLayout()) {
@@ -293,7 +293,7 @@ public class GuiHandler extends EventRegistrations {
         if(!button.enabled) return;
         if (guiScreen instanceof GuiMainMenu) {
             if (button.id == BUTTON_REPLAY_VIEWER) {
-                new GuiReplayViewer(mod).display();
+                getMinecraft().displayGuiScreen(new com.replaymod.studio.ReplayLibrary(null));
             }
         }
 

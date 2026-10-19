@@ -69,6 +69,9 @@ import static de.johni0702.minecraft.gui.versions.MCVer.getFontRenderer;
 import net.minecraft.client.resources.I18n;
 
 public class GuiReplayViewer extends GuiScreen {
+    @Override public void display() {
+        getMinecraft().displayGuiScreen(new com.replaymod.studio.ReplayLibrary(null));
+    }
     private final ReplayModReplay mod;
 
     public final GuiReplayList list = new GuiReplayList(this).onSelectionChanged(this::updateButtons).onSelectionDoubleClicked(() -> {

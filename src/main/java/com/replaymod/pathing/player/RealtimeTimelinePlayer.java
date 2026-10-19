@@ -28,6 +28,7 @@ public class RealtimeTimelinePlayer extends AbstractTimelinePlayer {
     @Override
     public ListenableFuture<Void> start(Timeline timeline) {
         firstFrame = true;
+        secondFrame = false;
         return super.start(timeline);
     }
 
@@ -46,6 +47,6 @@ public class RealtimeTimelinePlayer extends AbstractTimelinePlayer {
 
     @Override
     public long getTimePassed() {
-        return startOffset + (firstFrame ? 0 : System.currentTimeMillis() - startTime);
+        return startOffset + (firstFrame || secondFrame ? 0 : System.currentTimeMillis() - startTime);
     }
 }
