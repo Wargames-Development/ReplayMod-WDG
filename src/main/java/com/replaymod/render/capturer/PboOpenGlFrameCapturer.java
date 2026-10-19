@@ -91,17 +91,21 @@ public abstract class PboOpenGlFrameCapturer<F extends Frame, D extends Enum<D> 
     @Override
     protected OpenGlFrame captureFrame(int frameId, D captureData) {
         pbo.bind();
-
-        int offset = captureData.ordinal() * getFrameWidth() * getFrameHeight() * 4;
-        frameBuffer().bindFramebuffer(true);
-        GL11.glReadPixels(0, 0, getFrameWidth(), getFrameHeight(), GL12.GL_BGRA, GL11.GL_UNSIGNED_BYTE, offset);
-        if (withDepth) {
-            offset += data.length * getFrameWidth() * getFrameHeight() * 4;
-            GL11.glReadPixels(0, 0, getFrameWidth(), getFrameHeight(), GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, offset);
+        try {
+            int offset = captureData.ordinal() * getFrameWidth() * getFrameHeight() * 4;
+            frameBuffer().bindFramebuffer(true);
+            try {
+                GL11.glReadPixels(0, 0, getFrameWidth(), getFrameHeight(), GL12.GL_BGRA, GL11.GL_UNSIGNED_BYTE, offset);
+                if (withDepth) {
+                    offset += data.length * getFrameWidth() * getFrameHeight() * 4;
+                    GL11.glReadPixels(0, 0, getFrameWidth(), getFrameHeight(), GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, offset);
+                }
+            } finally {
+                frameBuffer().unbindFramebuffer();
+            }
+        } finally {
+            pbo.unbind();
         }
-        frameBuffer().unbindFramebuffer();
-
-        pbo.unbind();
         return null;
     }
 

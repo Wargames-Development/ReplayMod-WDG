@@ -80,15 +80,18 @@ public abstract class OpenGlFrameCapturer<F extends Frame, D extends CaptureData
         resizeMainWindow(mc, getFrameWidth(), getFrameHeight());
 
         pushMatrix();
-        frameBuffer().bindFramebuffer(true);
-
-        clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        enableTexture2D();
-
-        worldRenderer.renderWorld(partialTicks, captureData);
-
-        frameBuffer().unbindFramebuffer();
-        popMatrix();
+        try {
+            frameBuffer().bindFramebuffer(true);
+            try {
+                clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+                enableTexture2D();
+                worldRenderer.renderWorld(partialTicks, captureData);
+            } finally {
+                frameBuffer().unbindFramebuffer();
+            }
+        } finally {
+            popMatrix();
+        }
 
         return captureFrame(frameId, captureData);
     }

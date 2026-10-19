@@ -24,6 +24,9 @@ import de.johni0702.minecraft.gui.utils.lwjgl.ReadablePoint;
 import de.johni0702.minecraft.gui.utils.lwjgl.WritablePoint;
 import net.minecraft.client.settings.GameSettings;
 import net.minecraft.client.resources.I18n;
+import net.minecraft.client.gui.GuiChat;
+import net.minecraftforge.client.event.GuiOpenEvent;
+import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 
 import static com.replaymod.core.ReplayMod.TEXTURE_SIZE;
 
@@ -170,7 +173,7 @@ public class GuiReplayOverlay extends AbstractGuiOverlay<GuiReplayOverlay> {
         return this;
     }
 
-    private class EventHandler extends EventRegistrations {
+    public class EventHandler extends EventRegistrations {
         { on(KeyBindingEventCallback.EVENT, this::onKeyBindingEvent); }
         private void onKeyBindingEvent() {
             GameSettings gameSettings = getMinecraft().gameSettings;
@@ -181,12 +184,32 @@ public class GuiReplayOverlay extends AbstractGuiOverlay<GuiReplayOverlay> {
             }
         }
 
-        { on(KeyEventCallback.EVENT, (int key, int scanCode, int action, int modifiers) -> { onKeyInput(key, action); return false; }); }
-        private void onKeyInput(int key, int action) {
-            if (action != KeyEventCallback.ACTION_PRESS) return;
+        { on(KeyEventCallback.EVENT, (key, scanCode, action, modifiers) -> onKeyInput(key, action)); }
+        private boolean onKeyInput(int key, int action) {
+            if (action != KeyEventCallback.ACTION_PRESS) return false;
+            GameSettings gameSettings = getMinecraft().gameSettings;
+            // Read the configured keys before KeyBinding's single-entry-per-key
+            // lookup or another mod can consume their press counters.
+            if (getMinecraft().currentScreen == null && key != 0
+                    && (key == gameSettings.keyBindChat.getKeyCode()
+                    || key == gameSettings.keyBindCommand.getKeyCode())) {
+                setMouseVisible(true);
+                return true;
+            }
             // Allow F1 to be used to hide the replay gui (e.g. for recording with OBS)
             if (isMouseVisible() && key == Keyboard.KEY_F1) {
                 hidden = !hidden;
+            }
+            return false;
+        }
+
+        @SubscribeEvent
+        public void onGuiOpen(GuiOpenEvent event) {
+            // A mod can still open chat directly after the raw key callback.
+            // Keep the overlay's input screen so timeline buttons receive clicks.
+            if (event.gui instanceof GuiChat) {
+                event.setCanceled(true);
+                setMouseVisible(true);
             }
         }
     }

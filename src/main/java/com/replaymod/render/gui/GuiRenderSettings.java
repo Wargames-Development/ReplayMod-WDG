@@ -252,8 +252,10 @@ public class GuiRenderSettings extends AbstractGuiPopup<GuiRenderSettings> {
                     renderButton.onClick();
                 });
             } catch (Throwable t) {
-                error(LOGGER, GuiRenderSettings.this, CrashReport.makeCrashReport(t, "Rendering video"), () -> {});
-                getScreen().display(); // Re-show the render settings gui and the new error popup
+                // This settings popup was closed before rendering. Attach the
+                // error to its live screen, otherwise the popup is invisible.
+                getScreen().display();
+                error(LOGGER, getScreen(), CrashReport.makeCrashReport(t, "Rendering video"), () -> {});
             }
         }
     })).setSize(100, 20).setI18nLabel("replaymod.gui.render");

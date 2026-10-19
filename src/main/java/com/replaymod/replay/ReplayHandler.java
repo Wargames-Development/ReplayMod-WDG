@@ -280,6 +280,9 @@ public class ReplayHandler {
         if (cameraEntity == null) {
             return; // Cannot spectate if we have no camera
         }
+        if (e instanceof EntityPlayer && e != cameraEntity && !(e instanceof EntityOtherPlayerMP)) {
+            return; // Exclude local mod camera dummies, including MCHR's cockpit camera.
+        }
         if (e == null || e == cameraEntity) {
             spectating = null;
             e = cameraEntity;
@@ -353,6 +356,14 @@ public class ReplayHandler {
             } else {
                 targetCameraPosition = null;
             }
+        }
+
+        // Camera-path playback and rendering own the sender in synchronous mode.
+        // Seeking from the overlay must not start an async worker behind their back.
+        if (!replaySender.isAsyncMode()) {
+            replaySender.sendPacketsTill(targetTime);
+            moveCameraToTargetPosition();
+            return;
         }
 
         long diff = targetTime - (replaySender.isHurrying() ? replaySender.getDesiredTimestamp() : replaySender.currentTimeStamp());

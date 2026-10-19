@@ -1,8 +1,8 @@
 package com.replaymod.replay.mixin;
 
-import com.replaymod.replay.compat.ReplayRenderViewContext;
+import com.replaymod.replay.camera.CameraEntity;
+import net.minecraft.client.Minecraft;
 import net.minecraft.entity.Entity;
-import net.minecraft.entity.player.EntityPlayer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
@@ -10,15 +10,9 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * MCHeli-R asks its client proxy for the "client player" while rendering
- * aircraft, seats and first-person-sensitive parts.  In a replay that accessor
- * normally returns ReplayMod's CameraEntity, so the recorded pilot/passenger is
- * treated as a remote player and first-person model decisions are wrong.
- *
- * Only substitute the recorded spectated player inside RenderManager's entity
- * render scope.  Outside rendering MCHeli keeps seeing the real CameraEntity,
- * preventing replayed players from entering MCHeli's local control/physics
- * branches.
+ * Recorded pilots must remain remote players to MCHR, even while spectated.
+ * Its local-player identity checks also select client control/physics branches;
+ * substituting a recorded pilot couples vehicle state to observer input.
  */
 @Pseudo
 @Mixin(targets = "mcheli.MCH_ClientProxy", remap = false)
@@ -29,10 +23,10 @@ public abstract class MixinMCHClientProxy_MCHeli {
             cancellable = true,
             remap = false
     )
-    private void replayModCompat$useSpectatedPlayerForRendering(CallbackInfoReturnable<Entity> cir) {
-        EntityPlayer spectated = ReplayRenderViewContext.getSpectatedPlayerForEntityRender();
-        if (spectated != null) {
-            cir.setReturnValue(spectated);
+    private void replayModCompat$keepObserverIdentity(CallbackInfoReturnable<Entity> cir) {
+        Entity player = Minecraft.getMinecraft().thePlayer;
+        if (player instanceof CameraEntity) {
+            cir.setReturnValue(player);
         }
     }
 }

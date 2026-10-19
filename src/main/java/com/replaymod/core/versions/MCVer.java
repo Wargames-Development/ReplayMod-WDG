@@ -158,7 +158,7 @@ public class MCVer {
     }
 
     public static class GlStateManager {
-        public static void resetColor() { /* nop */ }
+        public static void resetColor() { glColor4f(1, 1, 1, 1); }
         public static void clearColor(float r, float g, float b, float a) { glClearColor(r, g, b, a); }
         public static void enableTexture2D() { glEnable(GL_TEXTURE_2D); }
         public static void enableAlpha() { glEnable(GL_ALPHA_TEST); }

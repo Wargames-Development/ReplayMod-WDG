@@ -23,8 +23,9 @@ public class SpectatorCameraController implements CameraController {
     @Override
     public void update(float partialTicksPassed) {
         Minecraft mc = getMinecraft();
-        if (mc.gameSettings.keyBindSneak.isPressed()) {
+        if (mc.gameSettings.keyBindSneak.getIsKeyPressed() || mc.gameSettings.keyBindSneak.isPressed()) {
             ReplayModReplay.instance.getReplayHandler().spectateCamera();
+            return;
         }
 
         // Soak up all remaining key presses
@@ -43,10 +44,10 @@ public class SpectatorCameraController implements CameraController {
         Entity view = mc.renderViewEntity;
         if (view != null && view != camera) {
             camera.setCameraPosRot(mc.renderViewEntity);
-            // If it's a player, also 'steal' its inventory so the rendering code knows what item to render
+            // Copy render state without sharing the recorded player's mutable inventory.
             if (view instanceof EntityPlayer) {
                 EntityPlayer viewPlayer = (EntityPlayer) view;
-                camera.inventory = viewPlayer.inventory;
+                camera.inventory.copyInventory(viewPlayer.inventory);
                 EntityPlayerAccessor cameraA = (EntityPlayerAccessor) camera;
                 EntityPlayerAccessor viewPlayerA = (EntityPlayerAccessor) viewPlayer;
                 cameraA.setItemInUse(viewPlayerA.getItemInUse());

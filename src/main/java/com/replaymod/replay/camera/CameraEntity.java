@@ -19,6 +19,7 @@ import com.replaymod.replay.mixin.FirstPersonRendererAccessor;
 import com.replaymod.replaystudio.util.Location;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.AbstractClientPlayer;
+import net.minecraft.client.entity.EntityOtherPlayerMP;
 import net.minecraft.client.network.NetHandlerPlayClient;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLiving;
@@ -179,6 +180,12 @@ public class CameraEntity extends EntityClientPlayerMP {
         refreshSpectatedView();
     }
 
+    @Override
+    public void mountEntity(Entity entityIn) {
+        // Replay mounts belong to recorded entities. Mounting the observer would
+        // let vehicle mods treat camera input as live pilot/gunner controls.
+    }
+
     /**
      * Re-acquires the stored spectated player after replay restarts/seeks and keeps the
      * camera at their position. This must also be callable from the render path because
@@ -192,6 +199,13 @@ public class CameraEntity extends EntityClientPlayerMP {
 
         EntityLivingBase view = this.mc.renderViewEntity;
         UUID spectating = ReplayModReplay.instance.getReplayHandler().getSpectatedUUID();
+
+        if (spectating == null && !(cameraController instanceof SpectatorCameraController)) {
+            // A mod's cockpit/chase camera is not an explicit spectator selection.
+            // Keep free-camera ownership even when that mod's dummy is in the world.
+            this.mc.renderViewEntity = this;
+            return;
+        }
 
         if (spectating != null) {
             boolean wrongPlayer = view == null || !spectating.equals(view.getUniqueID());
@@ -386,6 +400,9 @@ public class CameraEntity extends EntityClientPlayerMP {
     }
 
     private void handleInputEvents() {
+        if (this.mc.gameSettings.keyBindSneak.getIsKeyPressed()) {
+            return; // Do not re-enter spectating during the same frame as leaving it.
+        }
         if (this.mc.gameSettings.keyBindAttack.isPressed() || this.mc.gameSettings.keyBindUseItem.isPressed()) {
             if (this.mc.currentScreen == null && canSpectate(this.mc.pointedEntity)) {
                 ReplayModReplay.instance.getReplayHandler().spectateEntity((EntityLivingBase) this.mc.pointedEntity);
@@ -404,7 +421,8 @@ public class CameraEntity extends EntityClientPlayerMP {
     }
 
     public boolean canSpectate(Entity e) {
-        return e != null && e instanceof EntityPlayer // cannot be more generic since 1.7.10 has no concept of eye height
+        // Mod camera dummies are also EntityPlayers, but are not recorded players.
+        return e instanceof EntityOtherPlayerMP
                 && !e.isInvisible();
     }
 

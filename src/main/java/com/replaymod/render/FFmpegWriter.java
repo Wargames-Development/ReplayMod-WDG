@@ -37,6 +37,7 @@ public class FFmpegWriter implements FrameConsumer<BitmapFrame> {
     private final WritableByteChannel channel;
     private final String commandArgs;
     private volatile boolean aborted;
+    private long framesWritten;
 
     private ByteArrayOutputStream ffmpegLog = new ByteArrayOutputStream(4096);
 
@@ -109,7 +110,10 @@ public class FFmpegWriter implements FrameConsumer<BitmapFrame> {
         BitmapFrame frame = channels.get(Channel.BRGA);
         try {
             checkSize(frame.getSize());
-            channel.write(frame.getByteBuffer());
+            while (frame.getByteBuffer().hasRemaining()) {
+                channel.write(frame.getByteBuffer());
+            }
+            framesWritten++;
         } catch (Throwable t) {
             if (aborted) {
                 return;
@@ -149,6 +153,9 @@ public class FFmpegWriter implements FrameConsumer<BitmapFrame> {
 
     public File getVideoFile() throws FFmpegStartupException {
         String log = ffmpegLog.toString();
+        if (framesWritten == 0) {
+            throw new FFmpegStartupException(settings, "No video frames were written.\n" + log);
+        }
         for (String line : log.split("\n")) {
             if (line.startsWith("Output #0")) {
                 String fileName = line.substring(line.indexOf(", to '") + 6, line.lastIndexOf('\''));

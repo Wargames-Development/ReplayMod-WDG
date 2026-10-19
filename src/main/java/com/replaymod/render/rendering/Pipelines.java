@@ -24,6 +24,7 @@ import com.replaymod.render.processor.ODSToBitmapProcessor;
 import com.replaymod.render.processor.OpenGlToBitmapProcessor;
 import com.replaymod.render.processor.StereoscopicToBitmapProcessor;
 import com.replaymod.render.utils.PixelBufferObject;
+import cpw.mods.fml.common.Loader;
 
 import java.util.Locale;
 import java.util.Map;
@@ -39,10 +40,16 @@ public class Pipelines {
      * still requires the PBO path in this 1.7.10 renderer.
      */
     private static boolean usePbo(RenderSettings settings) {
+        // Angelica 2.2.14 rewrites the PBO-offset glReadPixels overload to a
+        // nonexistent GLStateManager method. ByteBuffer readback is supported.
+        if (Loader.isModLoaded("angelica")) return false;
         return settings.isDepthMap() || (PixelBufferObject.SUPPORTED && !MAC_OS);
     }
 
     public static Pipeline newPipeline(RenderSettings.RenderMethod method, RenderInfo renderInfo, FrameConsumer<BitmapFrame> consumer) {
+        if (renderInfo.getRenderSettings().isDepthMap() && Loader.isModLoaded("angelica")) {
+            throw new UnsupportedOperationException("Depth-map export requires PBO readback, which is incompatible with this Angelica version. Disable depth-map export to render video.");
+        }
         switch (method) {
             case DEFAULT:
                 return newDefaultPipeline(renderInfo, consumer);

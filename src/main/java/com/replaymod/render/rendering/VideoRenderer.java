@@ -142,6 +142,8 @@ public class VideoRenderer implements RenderInfo {
      * @return {@code true} if rendering was successful, {@code false} if the user aborted rendering (or the window was closed)
      */
     public boolean renderVideo() throws Throwable {
+        boolean finished = false;
+        try {
         ReplayRenderCallback.Pre.EVENT.invoker().beforeRendering(this);
 
         setup();
@@ -189,6 +191,7 @@ public class VideoRenderer implements RenderInfo {
         }
 
         finish();
+        finished = true;
 
         ReplayRenderCallback.Post.EVENT.invoker().afterRendering(this);
 
@@ -197,6 +200,12 @@ public class VideoRenderer implements RenderInfo {
         }
 
         return !cancelled;
+        } finally {
+            if (!finished && timelinePlayerFuture != null) {
+                cancelled = true;
+                finish();
+            }
+        }
     }
 
     @Override
@@ -310,11 +319,11 @@ public class VideoRenderer implements RenderInfo {
     }
 
     private void finish() {
-        if (!timelinePlayerFuture.isDone()) {
+        if (timelinePlayerFuture != null && !timelinePlayerFuture.isDone()) {
             timelinePlayerFuture.cancel(false);
         }
         // Tear down of the timeline player might only happen the next tick after it was cancelled
-        timelinePlayer.onTick();
+        if (timelinePlayer != null) timelinePlayer.onTick();
 
         // FBOs are always used in 1.14+
         if (!OpenGlHelper.isFramebufferEnabled()) {
@@ -324,13 +333,15 @@ public class VideoRenderer implements RenderInfo {
         if (mouseWasGrabbed) {
             mc.mouseHelper.grabMouseCursor();
         }
-        for (Map.Entry<SoundCategory, Float> entry : originalSoundLevels.entrySet()) {
-            mc.gameSettings.setSoundLevel(entry.getKey(), entry.getValue());
+        if (originalSoundLevels != null) {
+            for (Map.Entry<SoundCategory, Float> entry : originalSoundLevels.entrySet()) {
+                mc.gameSettings.setSoundLevel(entry.getKey(), entry.getValue());
+            }
         }
         mc.displayGuiScreen(null);
-        forceChunkLoadingHook.uninstall();
+        if (forceChunkLoadingHook != null) forceChunkLoadingHook.uninstall();
 
-        if (!hasFailed() && cameraPathExporter != null) {
+        if (!cancelled && !hasFailed() && cameraPathExporter != null) {
             try {
                 cameraPathExporter.finish();
             } catch (IOException e) {
@@ -338,10 +349,12 @@ public class VideoRenderer implements RenderInfo {
             }
         }
 
-        mc.getSoundHandler().playSound(PositionedSoundRecord.createPositionedSoundRecord(SOUND_RENDER_SUCCESS, 1));
+        if (!cancelled && !hasFailed()) {
+            mc.getSoundHandler().playSound(PositionedSoundRecord.createPositionedSoundRecord(SOUND_RENDER_SUCCESS, 1));
+        }
 
         try {
-            if (!hasFailed() && ffmpegWriter != null) {
+            if (!cancelled && !hasFailed() && ffmpegWriter != null) {
                 new GuiRenderingDone(ReplayModRender.instance, ffmpegWriter.getVideoFile(), totalFrames, settings).display();
             }
         } catch (FFmpegWriter.FFmpegStartupException e) {
@@ -349,7 +362,10 @@ public class VideoRenderer implements RenderInfo {
         }
 
         // Finally, resize the Minecraft framebuffer to the actual width/height of the window
-        resizeMainWindow(mc, displayWidth, displayHeight);
+        if (displayWidth > 0 && displayHeight > 0) resizeMainWindow(mc, displayWidth, displayHeight);
+        if (guiFramebuffer != null) guiFramebuffer.deleteFramebuffer();
+        mc.getFramebuffer().bindFramebuffer(true);
+        resetColor();
     }
 
     private void executeTaskQueue() {
@@ -388,6 +404,7 @@ public class VideoRenderer implements RenderInfo {
             pushMatrix();
             clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             enableTexture2D();
+            resetColor();
             guiFramebuffer.bindFramebuffer(true);
 
             mc.entityRenderer.setupOverlayRendering();

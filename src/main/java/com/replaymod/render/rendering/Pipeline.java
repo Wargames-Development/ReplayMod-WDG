@@ -46,7 +46,7 @@ public class Pipeline<R extends Frame, P extends Frame> implements Runnable {
     public synchronized void run() {
         consumerNextFrame = 0;
         int processors = Runtime.getRuntime().availableProcessors();
-        int processThreads = Math.max(1, processors - 2); // One processor for the main thread and one for ffmpeg, sorry OS :(
+        int processThreads = Math.max(1, Math.min(4, processors - 2));
         ExecutorService processService = new ThreadPoolExecutor(processThreads, processThreads,
                 0L, TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<Runnable>(2) {
@@ -62,38 +62,49 @@ public class Pipeline<R extends Frame, P extends Frame> implements Runnable {
                     }
                 }, new ThreadPoolExecutor.DiscardPolicy());
 
-        Minecraft mc = MCVer.getMinecraft();
-        while (!capturer.isDone() && !abort) {
-            if (GLFW.glfwWindowShouldClose(new com.replaymod.core.versions.Window(mc).getHandle()) || ((MinecraftAccessor) mc).getCrashReporter() != null) {
-                processService.shutdown();
-                return;
-            }
-            Map<Channel, R> rawFrame = capturer.process();
-            if (rawFrame != null) {
-                processService.submit(new ProcessTask(rawFrame));
-            }
-        }
-
-        processService.shutdown();
         try {
-            processService.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-
-        try {
-            worldRenderer.close();
-            capturer.close();
-            processor.close();
-            consumer.close();
-        } catch (Throwable t) {
-            CrashReport crashReport = CrashReport.makeCrashReport(t, "Cleaning up rendering pipeline");
-            throw new ReportedException(crashReport);
+            Minecraft mc = MCVer.getMinecraft();
+            while (!capturer.isDone() && !abort) {
+                if (GLFW.glfwWindowShouldClose(new com.replaymod.core.versions.Window(mc).getHandle()) || ((MinecraftAccessor) mc).getCrashReporter() != null) {
+                    break;
+                }
+                Map<Channel, R> rawFrame = capturer.process();
+                if (rawFrame != null) {
+                    processService.submit(new ProcessTask(rawFrame));
+                }
+            }
+        } catch (RuntimeException | Error failure) {
+            cancel();
+            throw failure;
+        } finally {
+            processService.shutdown();
+            try {
+                processService.awaitTermination(30, TimeUnit.SECONDS);
+                if (!processService.isTerminated()) {
+                    cancel();
+                    processService.shutdownNow();
+                    processService.awaitTermination(5, TimeUnit.SECONDS);
+                }
+            } catch (InterruptedException e) {
+                processService.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+            try {
+                worldRenderer.close();
+                capturer.close();
+                processor.close();
+                consumer.close();
+            } catch (Throwable t) {
+                throw new ReportedException(CrashReport.makeCrashReport(t, "Cleaning up rendering pipeline"));
+            }
         }
     }
 
     public void cancel() {
         abort = true;
+        synchronized (consumerLock) {
+            consumerLock.notifyAll();
+        }
     }
 
     private class ProcessTask implements Runnable {
@@ -120,18 +131,20 @@ public class Pipeline<R extends Frame, P extends Frame> implements Runnable {
                     return;
                 }
                 synchronized (consumerLock) {
-                    while (consumerNextFrame != frameId) {
+                    while (consumerNextFrame != frameId && !abort) {
                         try {
                             consumerLock.wait();
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
                         }
                     }
+                    if (abort) return;
                     consumer.consume(processedChannels);
                     consumerNextFrame++;
                     consumerLock.notifyAll();
                 }
             } catch (Throwable t) {
+                cancel();
                 CrashReport crashReport = CrashReport.makeCrashReport(t, "Processing frame");
                 MCVer.getMinecraft().crashed(crashReport);
             }

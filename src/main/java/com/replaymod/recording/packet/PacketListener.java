@@ -83,6 +83,9 @@ public class PacketListener extends ChannelInboundHandlerAdapter {
     private final ExecutorService saveService = Executors.newSingleThreadExecutor();
     private final ReplayOutputStream packetOutputStream;
 
+    private final RecordingPacketQueue<Packet> recordingQueue = new RecordingPacketQueue<>(
+            mc::isCallingFromMinecraftThread, task -> mc.addScheduledTask(task), this::savePacket);
+
     private ReplayMetaData metaData;
 
     private ChannelHandlerContext context = null;
@@ -150,14 +153,12 @@ public class PacketListener extends ChannelInboundHandlerAdapter {
     }
 
     public void save(Packet packet) {
-        // If we're not on the main thread (i.e. we're on the netty thread), then we need to schedule the saving
-        // to happen on the main thread so we can guarantee correct ordering of inbound and inject packets.
-        // Otherwise, injected packets may end up further down the packet stream than they were supposed to and other
-        // inbound packets which may rely on the injected packet would behave incorrectly when played back.
-        if (!mc.isCallingFromMinecraftThread()) {
-            mc.addScheduledTask(() -> save(packet));
-            return;
-        }
+        // Scheduling save(packet) alone lets a locally injected spawn overtake
+        // JoinGame while its recording task is still waiting on the main thread.
+        recordingQueue.save(packet);
+    }
+
+    private void savePacket(Packet packet) {
         try {
             if(packet instanceof S0CPacketSpawnPlayer) {
                 UUID uuid = ((S0CPacketSpawnPlayer) packet).func_148948_e().getId();
@@ -389,7 +390,12 @@ public class PacketListener extends ChannelInboundHandlerAdapter {
         }
         ByteBuf byteBuf = Unpooled.buffer();
         try {
-            packet.writePacketData(new PacketBuffer(byteBuf));
+            PacketBuffer packetBuffer = new PacketBuffer(byteBuf);
+            if (packet instanceof S0CPacketSpawnPlayer) {
+                SpawnPlayerPacketWriter.write((S0CPacketSpawnPlayer) packet, packetBuffer);
+            } else {
+                packet.writePacketData(packetBuffer);
+            }
 
             // Copy the readable region rather than relying on the backing-array offset. This also gives us a
             // stable byte sequence before the original Netty buffer is released below.

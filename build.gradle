@@ -25,9 +25,40 @@ apply plugin: 'eclipse'
 
 sourceCompatibility = targetCompatibility = JavaVersion.VERSION_1_8
 
+idea {
+    project {
+        jdkName = '1.8'
+        languageLevel = '1.8'
+    }
+    module {
+        jdkName = '1.8'
+    }
+}
+
 group = 'com.replaymod'
-version = file('version.txt').text.trim()
+def versionBase = file('version.txt').text.trim()
+def currentBuildNumber = project.property('modBuildNumber').toString().toInteger()
+def packagingTaskNames = ['build', 'assemble', 'jar', 'shadowjar', 'reobf']
+def requestedTaskNames = gradle.startParameter.taskNames.collect { it.tokenize(':').last().toLowerCase(Locale.ROOT) }
+def packagingRequested = requestedTaskNames.isEmpty() || requestedTaskNames.any { packagingTaskNames.contains(it) }
+def effectiveBuildNumber = packagingRequested ? currentBuildNumber + 1 : currentBuildNumber
+version = "${versionBase}_X${effectiveBuildNumber}"
 archivesBaseName = 'ReplayMod-WDG'
+
+// Like the other WG repositories, keep one persisted number per packaging
+// invocation. IDE imports, workspace setup, compilation and tests are read-only.
+gradle.buildFinished { result ->
+    if (packagingRequested && !gradle.startParameter.dryRun && result.failure == null) {
+        def propertiesFile = file('gradle.properties')
+        def original = propertiesFile.getText('UTF-8')
+        def matcher = (original =~ /(?m)^modBuildNumber=\d+/)
+        if (!matcher.find()) {
+            throw new GradleException('gradle.properties must contain a valid modBuildNumber entry.')
+        }
+        propertiesFile.write(matcher.replaceFirst("modBuildNumber=${effectiveBuildNumber}"), 'UTF-8')
+        logger.lifecycle("ReplayMod-WDG build number updated: X${currentBuildNumber} -> X${effectiveBuildNumber}")
+    }
+}
 
 ext.minecraftBaseVersion = '1.7.10'
 
@@ -38,7 +69,7 @@ minecraft {
 }
 
 // ForgeGradle 1.2 preprocesses the Java source through sourceMainJava before compilation.
-// Keep the mod annotation version in lockstep with version.txt without reintroducing ReplayMod's multi-version preprocessor.
+// Keep the mod annotation in lockstep with the full version, including its WG build number.
 tasks.sourceMainJava.replace '@MOD_VERSION@', project.version
 tasks.sourceMainJava.replace '@MC_VERSION@', '[1.7.10]'
 
@@ -113,6 +144,14 @@ compileJava {
             "-AoutRefMapFile=${project.mixinRefMap.canonicalPath}",
             "-AreobfSrgFile=${project.file('build/mcp-srg.srg').canonicalPath}"
     ]
+}
+
+// Minecraft's packet classes initialize logging even in headless packet tests.
+test {
+    workingDir = file("$buildDir/test-runtime")
+    doFirst {
+        workingDir.mkdirs()
+    }
 }
 
 File configureRelocationOutput = new File(project.buildDir, 'configureRelocation')
@@ -236,7 +275,8 @@ jar {
                 'FMLCorePlugin': 'com.replaymod.core.LoadingPlugin',
                 'FMLCorePluginContainsFMLMod': 'true',
                 'ForceLoadAsMod': 'true',
-                'FMLAT': 'replaymod_at.cfg'
+                'FMLAT': 'replaymod_at.cfg',
+                'Implementation-Version': project.version
         )
     }
 }

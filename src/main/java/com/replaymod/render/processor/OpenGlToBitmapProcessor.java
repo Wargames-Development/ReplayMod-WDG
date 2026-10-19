@@ -11,7 +11,7 @@ public class OpenGlToBitmapProcessor extends AbstractFrameProcessor<OpenGlFrame,
     private byte[] row, rowSwap;
 
     @Override
-    public BitmapFrame process(OpenGlFrame rawFrame) {
+    public synchronized BitmapFrame process(OpenGlFrame rawFrame) {
         // Flip whole image in place
 
         ReadableDimension size = rawFrame.getSize();
