@@ -427,8 +427,8 @@ public class PacketListener extends ChannelInboundHandlerAdapter {
     /**
      * Normalizes the 1.7.10 S21 chunk-data payload produced by local/integrated-server packet objects.
      *
-     * The normal 1.7.10 wire layout stores the compressed-data length as a four-byte big-endian int after
-     * the 13-byte chunk header. Certain already-used local packet objects can instead re-serialize that same
+     * Vanilla's 13-byte header and WGCore's 17-byte header both store the compressed length as an int.
+     * Certain already-used local packet objects can instead re-serialize that same
      * length as a VarInt. Minecraft's S21 reader still expects the four-byte form, so recording those bytes
      * verbatim creates a replay which later interprets the first three zlib bytes as part of an enormous length.
      *
@@ -436,48 +436,7 @@ public class PacketListener extends ChannelInboundHandlerAdapter {
      * for every remaining payload byte. Anything else is rejected rather than knowingly writing a corrupt replay.
      */
     private byte[] normalize1710ChunkDataPacket(byte[] data) throws IOException {
-        final int headerLength = 13;
-        final int intLength = 4;
-        if (data.length < headerLength + intLength) {
-            throw new IOException("Truncated 1.7.10 S21 chunk packet: " + data.length + " bytes");
-        }
-
-        int declaredLength = ((data[headerLength] & 0xff) << 24)
-                | ((data[headerLength + 1] & 0xff) << 16)
-                | ((data[headerLength + 2] & 0xff) << 8)
-                | (data[headerLength + 3] & 0xff);
-        int normalPayloadLength = data.length - headerLength - intLength;
-        if (declaredLength == normalPayloadLength) {
-            return data;
-        }
-
-        int value = 0;
-        int shift = 0;
-        int varIntLength = 0;
-        while (varIntLength < 5 && headerLength + varIntLength < data.length) {
-            int current = data[headerLength + varIntLength] & 0xff;
-            value |= (current & 0x7f) << shift;
-            varIntLength++;
-            if ((current & 0x80) == 0) {
-                break;
-            }
-            shift += 7;
-        }
-
-        if (varIntLength <= 0 || varIntLength >= intLength
-                || value != data.length - headerLength - varIntLength) {
-            throw new IOException("Invalid 1.7.10 S21 chunk packet length: declared=" + declaredLength
-                    + ", payload=" + normalPayloadLength + ", bytes=" + data.length);
-        }
-
-        byte[] normalized = new byte[data.length + (intLength - varIntLength)];
-        System.arraycopy(data, 0, normalized, 0, headerLength);
-        normalized[headerLength] = (byte) (value >>> 24);
-        normalized[headerLength + 1] = (byte) (value >>> 16);
-        normalized[headerLength + 2] = (byte) (value >>> 8);
-        normalized[headerLength + 3] = (byte) value;
-        System.arraycopy(data, headerLength + varIntLength, normalized, headerLength + intLength, value);
-        return normalized;
+        return com.replaymod.core.utils.LegacyChunkPacket.normalizeSingle(data);
     }
 
     public void addMarker(String name) {

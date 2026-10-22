@@ -28,4 +28,7 @@ public interface MinecraftAccessor {
 
     @Accessor
     List<IResourcePack> getDefaultResourcePacks();
+
+    @Accessor("framebufferMc")
+    void replayModSetFramebuffer(net.minecraft.client.shader.Framebuffer framebuffer);
 }

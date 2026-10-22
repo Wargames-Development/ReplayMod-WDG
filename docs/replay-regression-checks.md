@@ -1,5 +1,33 @@
 # Player recording and replay seeking regression checks
 
+## Forge restart timeout and action range dragging (X30)
+
+The supplied log shows `Timeout waiting for client thread to catch up!` in
+Forge's channel-registration handler during synchronous camera-path playback.
+Its tail records a normal process exit; the exception itself is a replay login
+failure rather than evidence of a JVM crash. The editor/export screens stay open
+on rewind, so relying on `GuiOpeningReplay.handleInput()` to pump login work no
+longer works. ReplayMod now pumps its replay connection before Forge waits on
+the game thread, regardless of the visible screen. Synchronous playback/export
+also drain the receive queue after each packet, preserving login/registration
+ordering and preventing a large queued packet backlog.
+
+Timeline ranges have a taller body with hover feedback and smaller end-grip
+zones on short ranges. Scrubbing retains the chosen camera move. Grabbing its
+green range cancels obsolete seek work and clears scrub/pan capture; moving the
+range previews its bounds without processing the old seek. A click or unchanged
+drag does not create an undo entry or seek back to the move's start. Pointer
+release is recovered by frame polling if its queued event was missed, and later
+duplicate release events cannot commit twice. A new press cancels stale drag
+ownership, including presses on buttons or fields.
+
+Regression tests exercise queued login before Forge's actual play-client latch,
+seek-then-range grabbing at three window sizes, short-range body grips, no-op
+range clicks and duplicate/missed pointer releases. In-game checks still needed:
+rewind during path preview/export with the editor visible, repeatedly scrub then
+slide the green range, and confirm that both red ends move together at the same
+speed with one undoable edit per completed drag.
+
 ## Angelica pixel readback and empty videos
 
 The X14 export log showed `NoSuchMethodError` for
@@ -152,3 +180,63 @@ profile names, identity, position, rotation, and entity metadata, using the vani
 1.7.10 packet reader. Queue tests reproduce delayed inbound recording tasks with
 immediate local spawn/block events and dimension respawns. In-game rendering and
 camera-path input require the manual checks above.
+## MCHR aircraft pose after seeking (X29)
+
+Vehicles in this pack are MCHR; FMUR supplies guns. MCHR's client aircraft keep
+incoming position/yaw/pitch targets in `aircraft*` fields and bank in watcher 26.
+Replaying many packets and ticking only once left those targets partially applied.
+The replay seek completion and the first camera-path frame now settle those
+targets and synchronize all previous pose fields, including roll. A spawn with no
+movement packet keeps its spawn position and orientation. No model-axis offset is
+added.
+
+MCHR's snapshot timestamps, tracker expiry and far-vehicle presentation now use
+replay time during playback. Completing a seek invalidates the far renderer's
+smoothed pose cache so an earlier heading is not blended into the selected frame.
+Live worlds retain the original clocks and interpolation.
+
+Tests exercise the F-16's -90-degree heading, pitch and bank, a spawn-only pose,
+angle wrap, replay pause/rewind, far-pose invalidation and the actual installed
+MCHR class signatures/call sites (`REPLAYMOD_TEST_MCHR`, an unpacked mod folder).
+These checks do not replace an in-game visual comparison:
+
+1. Open PlaneTest, seek forward and backward to the parked F-16, and compare its
+   nose/tail direction to uninterrupted playback at the same moment.
+2. Pause during a banked turn; compare heading, pitch and bank in the editor,
+   fullscreen viewer and exported first frame.
+3. Pause with a distant aircraft visible for at least ten seconds. It must not
+   turn or disappear because wall time advanced. Seek away and back.
+4. Join a live world and verify normal MCHR flight and vehicle controls.
+
+## Repeat preview playback (X32)
+
+The applied playhead now stays at the exact final frame after completion. The
+legacy timeline and native editor receive that endpoint even if neither drew the
+last active tick, so pressing Play again uses the existing restart-at-end rule.
+Pausing keeps the last applied frame instead of a wall-clock estimate. Timer
+restoration and event unregistration happen immediately on finish or cancellation,
+before completion callbacks can start another run.
+
+`PreviewPlaybackTest` exercises four consecutive runs, pause/resume, a restart from
+inside a completion callback, and endpoint publication after a missed final draw.
+In-game, play an automated orbit to completion, press Space again several times,
+then pause halfway and resume. Repeat in the fullscreen viewer and after scrubbing.
+
+## X40: P opens an empty FMUR ammunition screen
+
+The user's modpack binds both replay play/pause and FMUR's Select Ammo Load
+Priority to P. Its client log records `com.flansmod.client.gui.GuiSelectAmmo`
+opening during replay. FMUR opens this even without a held gun; it then draws
+no ammunition controls, but Minecraft releases the mouse for the GUI. Existing
+mouse repair correctly leaves other mods' screens alone, so Escape was needed.
+
+The replay overlay now cancels this specific gameplay screen in `GuiOpenEvent`,
+before Minecraft changes screen or focus. Live play and other screens retain
+their existing behavior; bindings are not changed. No FMUR update is required.
+`FreeCameraPlaybackTest` covers eight rapid toggles with late ammo-menu attempts,
+continued camera focus, unrelated screens, and live ammunition selection.
+
+In-game: leave the editor for fly camera, press P to pause, turn the camera,
+then rapidly press P twice to briefly advance the replay. The cursor must stay
+captured without Escape or a mouse click. T and Escape must still open their
+intended editor/pause menus. Verify P ammo selection outside replay as well.

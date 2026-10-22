@@ -15,6 +15,27 @@ import static org.junit.Assert.*;
 import static org.junit.Assume.*;
 
 public class AudioExportTest {
+    @Test public void installedMchrEngineAndWeaponAssetsDecodeCompletelyAndRemainAudible() throws Exception {
+        String root=System.getenv("REPLAYMOD_TEST_MCHR"), executable=System.getenv("REPLAYMOD_TEST_FFMPEG");
+        assumeNotNull(root,executable);
+        for(String name:new String[]{"plane.ogg","heli.ogg","gau-8_snd.ogg"}) {
+            File sound=new File(root,"assets/mcheli/sounds/"+name);
+            assertTrue(sound.toString(),sound.isFile());
+            File probe=new File(new File(executable).getParentFile(),"ffprobe.exe");
+            run(probe.toString(),"-v","error","-show_entries","format=duration","-of","default=noprint_wrappers=1:nokey=1",sound.toString());
+            double expected=Double.parseDouble(new String(Files.readAllBytes(new File(temporary.getRoot(),"process.log").toPath()),StandardCharsets.UTF_8).trim());
+            paulscode.sound.codecs.CodecJOrbis codec=new paulscode.sound.codecs.CodecJOrbis();
+            try {
+                assertTrue(codec.initialize(sound.toURI().toURL()));
+                paulscode.sound.SoundBuffer buffer=codec.readAll(); assertNotNull(buffer);
+                PcmMixer.Clip clip=new PcmMixer.Clip(buffer.audioData,buffer.audioFormat);
+                double actual=clip.samples.length/2.0/clip.rate;
+                assertEquals(name+" must not lose its tail during decoding",expected,actual,0.1);
+                long energy=0; for(float sample:clip.samples) energy+=Math.abs(Math.round(sample*32768));
+                assertTrue(name+" must contain audible samples",energy>1000);
+            } finally { codec.cleanup(); }
+        }
+    }
     @Rule public TemporaryFolder temporary = new TemporaryFolder();
     private File wave(String name) throws Exception {
         File file = new File(temporary.getRoot(), name);

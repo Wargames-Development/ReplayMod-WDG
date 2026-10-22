@@ -277,6 +277,11 @@ public class GuiPathing {
                     Futures.addCallback(future, new FutureCallback<Void>() {
                         @Override
                         public void onSuccess(@Nullable Void result) {
+                            // The editor may draw between timer ticks and never
+                            // observe the final active frame. Publish it explicitly.
+                            long end = player.getPlaybackPosition();
+                            GuiPathing.this.timeline.setCursorPosition((int) end);
+                            com.replaymod.studio.CinematicEditor.previewFinished(GuiPathing.this, end);
                             if (future.isCancelled()) {
                                 core.printInfoToChat("replaymod.chat.pathinterrupted");
                             } else {
@@ -587,9 +592,9 @@ public class GuiPathing {
     }
 
     public boolean isPreviewPlaying() { return player.isActive(); }
-    public long getPreviewTime() { return player.getTimePassed(); }
+    public long getPreviewTime() { return player.getPlaybackPosition(); }
     public void stopPreview() {
-        if (player.isActive()) { player.getFuture().cancel(false); player.onTick(); }
+        if (player.isActive()) player.getFuture().cancel(false);
     }
 
     public boolean loadEntityTracker(Runnable thenRun) {

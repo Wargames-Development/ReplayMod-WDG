@@ -9,13 +9,14 @@ public final class StudioRenderDone extends StudioScreen {
     private final int frames;
     public StudioRenderDone(File file, int frames) { this.file = file; this.frames = frames; }
     @Override protected void build() {
-        button(1, 170, 330, 200, file.isDirectory() ? "Open image sequence" : file.getName().endsWith(".png") ? "Open image" : "Play video"); button(2, 380, 330, 200, "Open output folder"); button(3, 590, 330, 200, "Back to editor");
+        button(1, 236, 294, 156, file.isDirectory() ? "Open image sequence" : file.getName().endsWith(".png") ? "Open image" : "Play video");
+        button(2, 402, 294, 156, "Open output folder"); button(3, 568, 294, 156, "Back to editor");
     }
     @Override protected void drawContent(int x, int y, float partialTicks) {
-        drawRect(0, 0, 960, 540, 0xC0101720); panel(140, 150, 680, 240, file.getName().endsWith(".png") ? "IMAGE EXPORTED" : "VIDEO EXPORTED");
-        label(frames + " frames exported successfully.", 170, 200, TEXT);
-        label(fontRendererObj.trimStringToWidth(file.getAbsolutePath(), 620), 170, 230, MUTED);
-        label("Your shot sequence is saved inside the recording.", 170, 264, MUTED);
+        panel(220, 194, 520, 138, file.getName().endsWith(".png") ? "IMAGE EXPORTED" : "VIDEO EXPORTED");
+        label(frames + " frames exported successfully.", 236, 226, TEXT);
+        label(fontRendererObj.trimStringToWidth(file.getAbsolutePath(), 488), 236, 246, MUTED);
+        label("Your shot sequence is saved inside the recording.", 236, 270, MUTED);
     }
     @Override protected void activate(int id) {
         if (id == 1) MCVer.openFile(file);

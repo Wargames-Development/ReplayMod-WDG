@@ -4,7 +4,6 @@ import com.replaymod.core.ReplayMod;
 import com.replaymod.core.versions.MCVer;
 import com.replaymod.replaystudio.PacketData;
 import com.replaymod.replaystudio.data.Marker;
-import com.replaymod.replaystudio.filter.SquashFilter;
 import com.replaymod.replaystudio.filter.StreamFilter;
 import com.replaymod.replaystudio.io.ReplayInputStream;
 import com.replaymod.replaystudio.io.ReplayOutputStream;
@@ -125,7 +124,7 @@ public class MarkerProcessor {
         int splitCounter = 0;
 
         PacketTypeRegistry registry = MCVer.getPacketTypeRegistry(true);
-        SquashFilter squashFilter = new SquashFilter();
+        ChunkSquashFilter squashFilter = new ChunkSquashFilter();
 
         List<Pair<Path, ReplayMetaData>> outputPaths = new ArrayList<>();
 
@@ -147,7 +146,7 @@ public class MarkerProcessor {
             int inputDuration = inputReplayFile.getMetaData().getDuration();
             ReplayInputStream replayInputStream = inputReplayFile.getPacketData(registry);
             int timeOffset = 0;
-            SquashFilter cutFilter = null;
+            ChunkSquashFilter cutFilter = null;
             int startCutOffset = 0;
             PacketData nextPacket = replayInputStream.readPacket();
             Marker nextMarker = markerIterator.next();
@@ -183,7 +182,7 @@ public class MarkerProcessor {
                                         cutFilter.release();
                                     }
                                     startCutOffset = nextMarker.getTime();
-                                    cutFilter = new SquashFilter();
+                                    cutFilter = new ChunkSquashFilter();
                                 } else if (MARKER_NAME_END_CUT.equals(nextMarker.getName())) {
                                     timeOffset += nextMarker.getTime() - startCutOffset;
                                     if (cutFilter != null) {

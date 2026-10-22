@@ -18,7 +18,9 @@ public final class TimelineGraphics {
     }
     /** 0/1 resize the ends, 2 slides both ends, -1 is outside the selection. */
     public static int rangeHandle(int x, int from, int to, boolean shift) {
-        boolean endpoint = Math.abs(x - from) <= 6 || Math.abs(x - to) <= 6;
+        // Even a short clip retains a body grip between the two resize grips.
+        int grip = Math.min(6, Math.max(1, Math.abs(to - from) / 4));
+        boolean endpoint = Math.abs(x - from) <= grip || Math.abs(x - to) <= grip;
         if (!endpoint && (x <= from || x >= to)) return -1;
         if (shift || !endpoint) return 2;
         if (from == to) return 1;

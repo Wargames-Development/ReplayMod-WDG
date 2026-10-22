@@ -13,15 +13,15 @@ public final class StudioPause extends StudioScreen {
         replay.getReplaySender().setReplaySpeed(0);
     }
     @Override protected void build() {
-        button(1, 300, 140, 360, "Cinematic editor [T]");
-        button(2, 300, 174, 360, "Fly camera");
-        button(3, 300, 208, 360, "Replay library");
-        button(4, 300, 242, 360, "Replay settings");
-        button(5, 300, 300, 360, "Save and exit replay");
+        button(1, 320, 192, 320, "Cinematic editor [T]");
+        button(2, 320, 218, 320, "Fly camera");
+        button(3, 320, 244, 320, "Replay library");
+        button(4, 320, 270, 320, "Replay settings");
+        button(5, 320, 306, 320, "Save and exit replay");
     }
     @Override protected void drawContent(int x, int y, float partialTicks) {
-        drawRect(0, 0, 960, 540, 0x90101720); panel(270, 92, 420, 270, "REPLAY PAUSED");
-        label("Your camera path autosaves inside this recording.", 300, 342, MUTED);
+        panel(304, 154, 352, 202, "REPLAY PAUSED");
+        label("Camera paths save inside the recording.", 320, 340, MUTED);
     }
     @Override protected void activate(int id) {
         if (id == 1) mc.displayGuiScreen(replay.getOverlay().getStudioEditor());

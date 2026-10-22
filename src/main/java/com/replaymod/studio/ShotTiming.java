@@ -46,7 +46,7 @@ public final class ShotTiming {
         timeline.getTimePath().updateAll();
         List<Span> result = new ArrayList<>();
         Keyframe previous = null;
-        for (Keyframe key : timeline.getPositionPath().getKeyframes()) {
+        for (Keyframe key : ShotGroups.boundaries(timeline)) {
             if (previous != null) {
                 Integer from = timeline.getTimePath().getValue(TimestampProperty.PROPERTY, previous.getTime()).orElse(null);
                 Integer to = timeline.getTimePath().getValue(TimestampProperty.PROPERTY, key.getTime()).orElse(null);

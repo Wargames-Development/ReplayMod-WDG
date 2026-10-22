@@ -165,6 +165,12 @@ public class RenderSettings {
     private final boolean highPerformance;
     // Null from older saved settings intentionally enables the new audio exporter.
     private Boolean renderAudio;
+    private Boolean showPreview;
+    private boolean recoverRecordedTerrain;
+    public boolean isRecoverRecordedTerrain() { return recoverRecordedTerrain; }
+    public void setRecoverRecordedTerrain(boolean enabled) { recoverRecordedTerrain=enabled; }
+    public boolean isShowPreview() { return Boolean.TRUE.equals(showPreview); }
+    public void setShowPreview(boolean enabled) { showPreview=enabled; }
     public boolean isRenderAudio() { return renderAudio == null || renderAudio; }
     public void setRenderAudio(boolean enabled) { renderAudio = enabled; }
 
@@ -215,7 +221,7 @@ public class RenderSettings {
     }
 
     public RenderSettings withEncodingPreset(EncodingPreset encodingPreset) {
-        return new RenderSettings(
+        RenderSettings result=new RenderSettings(
                 renderMethod,
                 encodingPreset,
                 videoWidth,
@@ -238,6 +244,10 @@ public class RenderSettings {
                 exportArguments,
                 highPerformance
         );
+        result.showPreview=showPreview;
+        result.renderAudio=renderAudio;
+        result.recoverRecordedTerrain=recoverRecordedTerrain;
+        return result;
     }
 
     /**

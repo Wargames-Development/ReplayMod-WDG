@@ -21,6 +21,7 @@ public final class StudioPaths extends StudioScreen {
     private int offset;
     public StudioPaths(GuiScreen parent, ReplayHandler replay) { this.parent = parent; this.replay = replay; }
     private Map<String, Timeline> paths() throws IOException { return replay.getReplayFile().getTimelines(new SPTimeline()); }
+    @Override protected StudioViewport createViewport() { return new StudioViewport(width, height, 70, 40, 820, 460, false); }
     @Override protected void build() {
         name = field(520, 104, 350, name == null ? "Shot sequence" : name.getText());
         button(1, 520, 140, 350, "Save current sequence as new path");
@@ -37,7 +38,6 @@ public final class StudioPaths extends StudioScreen {
         offset = Math.min(offset, Math.max(0, names.size() - 1));
     }
     @Override protected void drawContent(int x, int y, float partialTicks) {
-        drawRect(0, 0, 960, 540, 0xB0101720);
         panel(70, 40, 820, 460, "SAVED CAMERA PATHS");
         label("Saved inside this recording. Your current sequence also autosaves.", 90, 68, MUTED);
         label("Path name", 520, 88, MUTED);

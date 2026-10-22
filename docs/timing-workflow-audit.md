@@ -18,7 +18,10 @@ Action speed is `(Replay Out - Replay In) / Video duration`.
 | 0:20 -> 0:24 | 2 seconds | 2x fast action |
 | 0:20 -> 0:20 | Any duration | Frozen action while the camera moves |
 
-**Fit path**, wheel zoom and **Set zoom span** change the visible ruler only.
+**Fit (Shift+Z)**, Ctrl+wheel zoom and **Set zoom span** change the visible ruler only.
+Ordinary wheel and empty-lane left-drag pan the view; middle-drag pans over keys
+and ranges as well. Drag a numbered ruler to scrub. These navigation gestures do
+not move shot keys or modify the action range.
 **Timing / speed** changes the exported clip. Camera smooth/straight movement
 changes its interpolation independently of recorded-action speed.
 
@@ -54,7 +57,8 @@ changes its interpolation independently of recorded-action speed.
    camera/clock key. Right-click Video opens the timing panel.
 8. Type exact pose or shot-clock values in the inspector and click Apply values.
    Pose previews while typing. Apply before switching shots, previewing, exporting,
-   or opening timing controls. Left/Right nudges the playhead 50 ms; Shift uses 1 s.
+   or opening timing controls. Left/Right steps one frame at the configured export
+   frame rate; Shift uses 1 s.
 9. Fit path, preview the result and export. Undo/redo restores a timing operation
    together with all shifted camera and clock keys. Existing recordings keep their
    storage format and are not rewritten by the development tools.

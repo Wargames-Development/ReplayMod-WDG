@@ -95,6 +95,20 @@ public class SPTimeline implements PathingRegistry {
         this.timeline = timeline;
         this.timePath = timeline.getPaths().get(SPPath.TIME.ordinal());
         this.positionPath = timeline.getPaths().get(SPPath.POSITION.ordinal());
+        smoothGeneratedPaths();
+    }
+
+    /** Older generated shots used linear camera segments; retain their keys and clocks. */
+    private void smoothGeneratedPaths() {
+        Map<String,Interpolator> curves = new HashMap<>();
+        for (PathSegment segment : new ArrayList<>(positionPath.getSegments())) {
+            String start = segment.getStartKeyframe().getValue(com.replaymod.simplepathing.properties.ShotGroupProperty.PROPERTY).orElse("");
+            String end = segment.getEndKeyframe().getValue(com.replaymod.simplepathing.properties.ShotGroupProperty.PROPERTY).orElse("");
+            int colon = start.indexOf(':');
+            if (colon < 1 || !end.startsWith(start.substring(0, colon) + ":") || !(segment.getInterpolator() instanceof LinearInterpolator)) continue;
+            Interpolator curve = curves.computeIfAbsent(start.substring(0, colon), key -> registerPositionInterpolatorProperties(InterpolatorType.CATMULL_ROM.newInstance()));
+            SetInterpolator.create(segment, curve).apply(timeline);
+        }
     }
 
     public Timeline getTimeline() {
@@ -619,6 +633,7 @@ public class SPTimeline implements PathingRegistry {
         timeline.registerProperty(CameraProperties.ROTATION);
         timeline.registerProperty(SpectatorProperty.PROPERTY);
         timeline.registerProperty(ExplicitInterpolationProperty.PROPERTY);
+        timeline.registerProperty(com.replaymod.simplepathing.properties.ShotGroupProperty.PROPERTY);
 
         return timeline;
     }

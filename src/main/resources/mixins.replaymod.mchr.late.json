@@ -1,0 +1,8 @@
+{
+  "required": true,
+  "package": "com.replaymod.replay.mixin",
+  "mixins": [],
+  "compatibilityLevel": "JAVA_8",
+  "minVersion": "0.7.11",
+  "refmap": "mixins.replaymod.refmap.json"
+}

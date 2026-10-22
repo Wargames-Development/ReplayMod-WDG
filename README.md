@@ -14,6 +14,11 @@ This branch deliberately does not retain ReplayMod's historical multi-Minecraft-
 
 ## Cinematic studio
 
+**Auto shots [G]** creates Orbit, Follow and Fly-by camera paths around a fixed
+point or recorded MCHR vehicle. Edit duration, replay In/Out, framing, easing and
+roll; review the draft, then place and preview it as one undoable shot. See
+[automated shots](docs/automated-shots.md) for controls and tracking details.
+
 The replay interface uses native Minecraft controls styled after WGMap's flat
 blue-gray menus. WGMap is a read-only design reference, not a runtime dependency.
 
@@ -49,6 +54,9 @@ only. **Timing / speed** changes the actual clip. See the
 [timing workflow and audit](docs/timing-workflow-audit.md) for examples.
 
 ## Setup
+
+For BountifulStars with Angelica and 1440p/60 or 4K/60 trailer exports, see
+[shader trailer export](docs/shader-trailer-export.md).
 
 On Windows (PowerShell):
 

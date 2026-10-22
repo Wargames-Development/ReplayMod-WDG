@@ -52,17 +52,9 @@ public class ConnectionEventHandler {
     public void onConnectedToServerEvent(NetworkManager networkManager) {
         try {
             boolean local = networkManager.isLocalChannel();
-            if (local) {
-                if(!core.getSettingsRegistry().get(Setting.RECORD_SINGLEPLAYER)) {
-                    logger.info("Singleplayer Recording is disabled");
-                    return;
-                }
-            } else {
-                if(!core.getSettingsRegistry().get(Setting.RECORD_SERVER)) {
-                    logger.info("Multiplayer Recording is disabled");
-                    return;
-                }
-            }
+            // Keep the login/world state available for a manual start from Esc.
+            // These preferences control automatic recording, not the controls.
+            boolean recordingEnabled = core.getSettingsRegistry().get(local ? Setting.RECORD_SINGLEPLAYER : Setting.RECORD_SERVER);
 
             String worldName;
             String serverName = null;
@@ -86,8 +78,10 @@ public class ConnectionEventHandler {
                 return;
             }
 
+            autoStart = recordingEnabled && autoStart;
             if (ReplayMod.isMinimalMode()) {
                 // Recording controls are not supported in minimal mode, so always auto-start
+                if (!recordingEnabled) return;
                 autoStart = true;
             }
 

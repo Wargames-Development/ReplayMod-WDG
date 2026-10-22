@@ -81,8 +81,13 @@ public class GuiSavingReplay {
         close();
         if (!core.getSettingsRegistry().get(Setting.RENAME_DIALOG) || outputPaths.isEmpty()) return;
         java.util.List<Path> paths = outputPaths.stream().map(Pair::getKey).collect(java.util.stream.Collectors.toList());
+        if (mc.currentScreen instanceof com.replaymod.studio.StudioRecordingNames) {
+            ((com.replaymod.studio.StudioRecordingNames) mc.currentScreen).addRecordings(paths);
+            return;
+        }
         mc.displayGuiScreen(new com.replaymod.studio.StudioRecordingNames(mc.currentScreen, paths, (path, name) -> {
             try {
+                if (name.isEmpty()) { Files.deleteIfExists(path); return; }
                 Path destination = core.getReplayFolder().resolve(Utils.replayNameToFileName(name));
                 if (destination.toAbsolutePath().normalize().equals(path.toAbsolutePath().normalize())) return;
                 for (int i = 1; Files.exists(destination); i++) destination = core.getReplayFolder().resolve(Utils.replayNameToFileName(name + " (" + i + ")"));

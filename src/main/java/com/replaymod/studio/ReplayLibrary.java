@@ -21,25 +21,30 @@ public final class ReplayLibrary extends StudioScreen {
     private GuiTextField filter, name;
     private String query = "";
     private int offset;
+    private int actionLeft, listWidth, rows, footer;
     public ReplayLibrary(GuiScreen parent) { this.parent = parent; }
+    @Override protected StudioViewport createViewport() { return new StudioViewport(width, height, 960, 540, true); }
+    @Override protected void beforeResize() { if (filter != null) query = filter.getText(); }
     @Override protected void build() {
+        actionLeft = canvasWidth - 326; listWidth = actionLeft - 52;
+        footer = canvasHeight - 72; rows = Math.max(1, (canvasHeight - 216) / 24);
         if (folder == null) {
             try { folder = ReplayMod.instance.getReplayFolder().toFile(); }
             catch (IOException failure) { message = failure.getMessage(); return; }
         }
-        filter = field(30, 78, 560, query);
-        name = field(634, 126, 292, selected == null ? "" : selected.getName());
-        button(1, 600, 77, 100, "Search"); button(2, 710, 77, 100, "Up folder");
-        button(3, 820, 77, 106, "Refresh");
-        button(4, 634, 164, 292, "Open replay / folder");
-        button(5, 634, 194, 292, "Rename selected");
-        button(6, 634, 224, 292, "Open recordings folder");
-        button(7, 634, 254, 292, "Replay settings");
-        button(11, 634, 294, 292, "Trim / split into edited copy");
-        button(12, 634, 324, 292, "Delete selected recording...");
-        button(13, 634, 354, 292, "Distant Horizons terrain source...");
-        button(8, 30, 468, 100, "Previous"); button(9, 140, 468, 100, "Next");
-        button(10, 826, 468, 100, "Back");
+        filter = field(28, 78, canvasWidth - 398, query);
+        name = field(actionLeft, 126, 298, selected == null ? "" : selected.getName());
+        button(1, canvasWidth - 358, 77, 100, "Search"); button(2, canvasWidth - 248, 77, 100, "Up folder");
+        button(3, canvasWidth - 138, 77, 110, "Refresh");
+        button(4, actionLeft, 164, 298, "Open replay / folder");
+        button(5, actionLeft, 194, 298, "Rename selected");
+        button(6, actionLeft, 224, 298, "Open recordings folder");
+        button(7, actionLeft, 254, 298, "Replay settings");
+        button(11, actionLeft, 294, 298, "Trim / split into edited copy");
+        button(12, actionLeft, 324, 298, "Delete selected recording...");
+        button(13, actionLeft, 354, 298, "Distant Horizons terrain source...");
+        button(8, 28, footer, 100, "Previous"); button(9, 138, footer, 100, "Next");
+        button(10, canvasWidth - 128, footer, 100, "Back");
         refresh();
     }
     private void refresh() {
@@ -53,22 +58,23 @@ public final class ReplayLibrary extends StudioScreen {
     }
     public void refreshFiles() { if (filter != null) refresh(); }
     @Override protected void drawContent(int x, int y, float partialTicks) {
-        drawRect(0, 0, canvasWidth, canvasHeight, 0xC0101720);
-        panel(16, 16, 928, 494, "REPLAY LIBRARY");
-        label("Choose a recording, then create your cinematic shots.", 30, 44, MUTED);
-        label("Search recordings", 30, 64, MUTED);
-        label("Selected recording / new name", 634, 110, MUTED);
-        label(fontRendererObj.trimStringToWidth(folder == null ? "No replay folder" : folder.getAbsolutePath(), 880), 30, 444, MUTED);
-        for (int i = 0; i < 13 && offset + i < files.size(); i++) {
+        drawRect(0, 0, canvasWidth, canvasHeight, 0xFF101720);
+        panel(16, 16, canvasWidth - 32, canvasHeight - 32, "");
+        label("REPLAY LIBRARY", 28, 26, TEXT);
+        label("Choose a recording, then create your cinematic shots.", 28, 44, MUTED);
+        label("Search recordings", 28, 64, MUTED);
+        label("Selected recording / new name", actionLeft, 110, MUTED);
+        label(fontRendererObj.trimStringToWidth(folder == null ? "No replay folder" : folder.getAbsolutePath(), canvasWidth - 56), 28, footer - 24, MUTED);
+        for (int i = 0; i < rows && offset + i < files.size(); i++) {
             File file = files.get(offset + i);
             int top = 112 + i * 24;
-            drawRect(30, top, 610, top + 22, file.equals(selected) ? 0xFF29425A : 0x801B2835);
-            label(fontRendererObj.trimStringToWidth((file.isDirectory() ? "[Folder] " : "") + file.getName(), 560), 40, top + 7, TEXT);
+            drawRect(28, top, 28 + listWidth, top + 22, file.equals(selected) ? 0xFF29425A : 0x801B2835);
+            label(fontRendererObj.trimStringToWidth((file.isDirectory() ? "[Folder] " : "") + file.getName(), listWidth - 24), 40, top + 7, TEXT);
         }
         if (files.isEmpty()) label("No recordings match. Make a recording first or choose another folder.", 40, 120, MUTED);
     }
     @Override protected void clicked(int x, int y, int button) {
-        if (button != 0 || !hit(x, y, 30, 112, 580, 312)) return;
+        if (button != 0 || !hit(x, y, 28, 112, listWidth, rows * 24)) return;
         int index = offset + (y - 112) / 24;
         if (index < files.size()) { selected = files.get(index); name.setText(selected.getName()); }
     }
@@ -104,8 +110,8 @@ public final class ReplayLibrary extends StudioScreen {
                 selected = null; refresh(); break;
             case 6: MCVer.openFile(folder); break;
             case 7: mc.displayGuiScreen(new StudioSettings(this, ReplayMod.instance.getSettingsRegistry())); break;
-            case 8: offset = Math.max(0, offset - 13); break;
-            case 9: offset = Math.min(Math.max(0, files.size() - 1), offset + 13); break;
+            case 8: offset = Math.max(0, offset - rows); break;
+            case 9: offset = Math.min(Math.max(0, files.size() - 1), offset + rows); break;
             case 10: escape(); break;
             case 11:
                 if (selected == null || !selected.isFile()) throw new IllegalArgumentException("Select a recording first.");

@@ -16,13 +16,15 @@ public final class StudioRenderQueue extends StudioScreen {
     private boolean running;
     public StudioRenderQueue(GuiScreen parent, ReplayHandler replay) { this.parent = parent; this.replay = replay; }
     private List<RenderJob> jobs() { return ReplayModRender.instance.getRenderQueue(); }
+    @Override protected StudioViewport createViewport() { return new StudioViewport(width, height, 80, 36, 800, 464, true); }
+    @Override protected void drawBackdrop(int x, int y, float partialTicks) { drawRect(0, 0, width, height, 0xFF111B24); }
     @Override protected void build() {
         button(1, 100, 450, 120, "Previous"); button(2, 230, 450, 120, "Next");
         button(3, 370, 450, 150, "Remove selected");
         button(4, 530, 450, 150, "Back"); button(5, 690, 450, 170, "Render queue");
     }
     @Override protected void drawContent(int x, int y, float partialTicks) {
-        drawRect(0, 0, 960, 540, 0xC0101720); panel(80, 36, 800, 464, "RENDER QUEUE");
+        panel(80, 36, canvasWidth - 80, canvasHeight - 36, "RENDER QUEUE");
         label("Each item keeps a copy of its camera path and video settings.", 100, 66, MUTED);
         label("Complete this queue before switching recordings.", 100, 84, MUTED);
         for (int i = 0; i < 12 && offset + i < jobs().size(); i++) {

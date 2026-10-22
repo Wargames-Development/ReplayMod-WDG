@@ -15,29 +15,38 @@ import java.nio.ByteBuffer;
 public final class GuiVideoRenderer extends StudioScreen {
     private final VideoRenderer renderer;
     private final long started = System.currentTimeMillis();
-    private volatile boolean previewEnabled = true;
+    private volatile boolean previewEnabled;
     private boolean confirmCancel, dirty;
     private int[] pixels;
     private int previewWidth, previewHeight, textureWidth, textureHeight;
     private DynamicTexture texture;
     private StudioRenderLayout layout;
-    public GuiVideoRenderer(VideoRenderer renderer) { this.renderer = renderer; }
+    public GuiVideoRenderer(VideoRenderer renderer) {
+        this.renderer = renderer;
+        previewEnabled=renderer!=null && renderer.getRenderSettings().isShowPreview();
+    }
     public GuiScreen toMinecraft() { return this; }
     @Override protected StudioViewport createViewport() { return new StudioViewport(width, height, 960, 540, true); }
     @Override protected void build() {
         layout = new StudioRenderLayout(canvasWidth, canvasHeight);
         int left = (canvasWidth - 620) / 2;
-        button(1, left, layout.buttonTop, 200, renderer.isPaused() ? "Resume render" : "Pause render");
-        button(2, left + 210, layout.buttonTop, 200, "Preview: " + (previewEnabled ? "On" : "Off"));
-        button(3, left + 420, layout.buttonTop, 200, confirmCancel ? "Confirm cancel" : "Cancel render");
+        if (confirmCancel) {
+            button(4, canvasWidth / 2 - 170, canvasHeight / 2 + 16, 160, "\u00a7cYes, cancel render");
+            button(5, canvasWidth / 2 + 10, canvasHeight / 2 + 16, 160, "Keep rendering");
+        } else {
+            buttonList.add(new RenderToggle(left, layout.buttonTop, renderer.isPaused()));
+            button(3, left + 50, layout.buttonTop, 200, "\u00a7cCancel render");
+            checkBox(2, left + 280, layout.buttonTop, 200, "Show preview", previewEnabled);
+        }
     }
     @Override protected void drawContent(int x, int y, float partialTicks) {
         // Overdraw a logical pixel to cover rounding at the window edges.
         drawRect(-1, -1, canvasWidth + 1, canvasHeight + 1, 0xFF101720);
         panel(16, 16, canvasWidth - 32, canvasHeight - 32, "RENDERING CINEMATIC");
         int done = renderer.getFramesDone(), total = renderer.getTotalFrames();
-        label("Frame " + Math.min(done, total) + " / " + total, 32, 54, TEXT);
-        if (!renderer.getStage().isEmpty()) label(renderer.getStage(), 32, 70, ACCENT);
+        String frameText = "Frame " + Math.min(done, total) + " / " + total;
+        label(frameText, (canvasWidth - fontRendererObj.getStringWidth(frameText)) / 2, layout.progressTop - 14, TEXT);
+        if (!renderer.getStage().isEmpty()) label(renderer.getStage(), (canvasWidth - fontRendererObj.getStringWidth(renderer.getStage())) / 2, 70, ACCENT);
         long elapsed = Math.max(0, System.currentTimeMillis() - started);
         long remaining = done > 0 ? elapsed * Math.max(0, total - done) / done : -1;
         label("Elapsed " + elapsed / 1000 + "s   |   " + (remaining < 0 ? "Preparing first frame..." : "About " + remaining / 1000 + "s remaining"), canvasWidth - 460, 54, MUTED);
@@ -45,6 +54,11 @@ public final class GuiVideoRenderer extends StudioScreen {
         drawRect(33, layout.progressTop + 1, 33 + (int) ((canvasWidth - 66L) * Math.min(done, total) / Math.max(1, total)), layout.progressTop + 19, ACCENT);
         if (previewEnabled) drawPreview();
         else previewMessage("Preview is off. Frames are still being exported.");
+        if (confirmCancel) {
+            drawRect(0, 0, canvasWidth, canvasHeight, 0xD0101720);
+            panel(canvasWidth / 2 - 200, canvasHeight / 2 - 46, 400, 100, "CANCEL RENDER?");
+            label("Stop now? The video will be incomplete.", canvasWidth / 2 - 170, canvasHeight / 2 - 12, 0xFFE46B67);
+        }
     }
     private void previewMessage(String text) { label(text, (canvasWidth - fontRendererObj.getStringWidth(text)) / 2, layout.previewTop + layout.previewHeight / 2, MUTED); }
     private synchronized void drawPreview() {
@@ -56,7 +70,7 @@ public final class GuiVideoRenderer extends StudioScreen {
             System.arraycopy(pixels, 0, texture.getTextureData(), 0, pixels.length);
             texture.updateDynamicTexture(); dirty = false;
         }
-        int[] bounds = layout.preview(w, h);
+        int[] bounds = previewBounds();
         int left = bounds[0], top = bounds[1], previewW = bounds[2], previewH = bounds[3];
         GL11.glColor4f(1, 1, 1, 1);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, texture.getGlTextureId());
@@ -67,6 +81,10 @@ public final class GuiVideoRenderer extends StudioScreen {
         t.addVertexWithUV(left + previewW, top, 0, 1, 0);
         t.addVertexWithUV(left, top, 0, 0, 0);
         t.draw();
+    }
+    private int[] previewBounds() {
+        return renderer==null ? layout.preview(previewWidth,previewHeight)
+            : layout.preview(renderer.getRenderSettings().getTargetVideoWidth(),renderer.getRenderSettings().getTargetVideoHeight());
     }
     public synchronized void updatePreview(ByteBuffer buffer, ReadableDimension size) {
         if (!previewEnabled) return;
@@ -81,12 +99,36 @@ public final class GuiVideoRenderer extends StudioScreen {
         dirty = true;
     }
     @Override protected void activate(int id) {
+        if (confirmCancel) {
+            if (id == 4) renderer.cancel();
+            if (id == 4 || id == 5) confirmCancel = false;
+            initGui(); return;
+        }
         if (id == 1) renderer.setPaused(!renderer.isPaused());
-        if (id == 2) previewEnabled = !previewEnabled;
-        if (id == 3) { if (confirmCancel) renderer.cancel(); else confirmCancel = true; }
+        if (id == 2) setPreviewEnabled(!previewEnabled);
+        if (id == 3) confirmCancel = true;
         initGui();
     }
-    @Override protected void escape() { confirmCancel = true; initGui(); }
+    public synchronized void setPreviewEnabled(boolean enabled) {
+        previewEnabled=enabled;
+        if (!enabled) releasePreview();
+        if (renderer!=null) renderer.getRenderSettings().setShowPreview(enabled);
+    }
+    @Override protected void escape() { confirmCancel = !confirmCancel; initGui(); }
+    private static final class RenderToggle extends net.minecraft.client.gui.GuiButton {
+        private final boolean paused;
+        RenderToggle(int x, int y, boolean paused) { super(1, x, y, 40, 20, paused ? "Resume render" : "Pause render"); this.paused = paused; }
+        @Override public void drawButton(net.minecraft.client.Minecraft mc, int x, int y) {
+            new StudioScreen.FlatButton(id, xPosition, yPosition, width, height, "").drawButton(mc, x, y);
+            int cx = xPosition + width / 2, cy = yPosition + (height - 10) / 2;
+            if (paused) {
+                for (int i = 0; i < 10; i++) drawRect(cx - 5 + i, cy + i / 2, cx - 4 + i, cy + 10 - i / 2, TEXT);
+            } else {
+                drawRect(cx - 5, cy, cx - 2, cy + 10, TEXT);
+                drawRect(cx + 1, cy, cx + 4, cy + 10, TEXT);
+            }
+        }
+    }
     public synchronized void releasePreview() {
         if (texture != null) { texture.deleteGlTexture(); texture = null; }
         pixels = null;

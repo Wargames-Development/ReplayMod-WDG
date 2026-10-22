@@ -55,6 +55,31 @@ public final class ShotModel {
         });
         return time;
     }
+    /** Capture appends at an occupied cursor; updating an existing shot remains explicit. */
+    public long capture(long requestedTime, long step, int sourceTime, boolean ending, boolean advanceAction, int recordingDuration,
+                        double x, double y, double z, float yaw, float pitch, float roll) {
+        SortedSet<Long> shots = times();
+        if (ending && timeline.getPositionPath().getKeyframes().isEmpty()) throw new IllegalArgumentException("Capture the starting camera with I first.");
+        long time = requestedTime;
+        if (!shots.isEmpty()) {
+            long last = shots.last();
+            if (shots.contains(time) || ending && time <= last) {
+                if (step < 10) throw new IllegalArgumentException("Set a camera step of at least 0.01 seconds.");
+                time = last + step;
+            }
+            if (time > last && advanceAction) {
+                Keyframe previous = timeline.getTimePath().getKeyframe(last);
+                int previousSource = previous == null ? sourceTime : previous.getValue(TimestampProperty.PROPERTY).orElse(sourceTime);
+                if (sourceTime <= previousSource) {
+                    long nextSource = previousSource + time - last;
+                    if (nextSource > recordingDuration) throw new IllegalArgumentException("The recording ends before this camera step. Shorten Step or choose frozen action.");
+                    sourceTime = (int) nextSource;
+                }
+            }
+        }
+        if (sourceTime > recordingDuration) throw new IllegalArgumentException("Replay time is outside this recording.");
+        return save(-1, time, sourceTime, x, y, z, yaw, pitch, roll);
+    }
     public void remove(long time) {
         timeline.editAtomically(() -> {
             if (timeline.isPositionKeyframe(time)) timeline.removePositionKeyframe(time);

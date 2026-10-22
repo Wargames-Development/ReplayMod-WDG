@@ -1,6 +1,8 @@
 package com.replaymod.replay.mixin;
 
 import com.replaymod.replay.gui.screen.GuiOpeningReplay;
+import com.replaymod.replay.ReplayHandler;
+import com.replaymod.replay.ReplayModReplay;
 import cpw.mods.fml.client.FMLClientHandler;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
@@ -15,6 +17,13 @@ public class MixinFMLClientHandler {
     private void tickNetworkManager(CallbackInfo ci) {
         Minecraft mc = Minecraft.getMinecraft();
         if (!mc.isCallingFromMinecraftThread()) {
+            return;
+        }
+        ReplayHandler replay = ReplayModReplay.instance == null ? null : ReplayModReplay.instance.getReplayHandler();
+        if (replay != null) {
+            // The opaque editor and export GUI deliberately stay open on rewind.
+            // JoinGame must still run before Forge waits on its play-client latch.
+            replay.processReplayPackets();
             return;
         }
         GuiScreen gui = mc.currentScreen;

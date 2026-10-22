@@ -107,6 +107,10 @@ public class ReplayHandler {
     private Location targetCameraPosition;
 
     private UUID spectating;
+    private EditorSeek editorSeek;
+    private net.minecraft.client.gui.GuiScreen editorSeekOwner;
+    private boolean editorWasAsync, closing, applyingEditorSeek;
+    private NetworkManager editorNetwork;
 
     public ReplayHandler(ReplayFile replayFile, boolean asyncMode) throws IOException {
         Preconditions.checkState(mc.isCallingFromMinecraftThread(), "Must be called from Minecraft thread.");
@@ -125,6 +129,7 @@ public class ReplayHandler {
         overlay = new GuiReplayOverlay(this);
         overlay.setVisible(true);
 
+        com.replaymod.replay.compat.ReplayAircraftExport.open(this);
         ReplayOpenedCallback.EVENT.invoker().replayOpened(this);
 
         fullReplaySender.setAsyncMode(asyncMode);
@@ -132,6 +137,7 @@ public class ReplayHandler {
 
     void restartedReplay() {
         com.replaymod.replay.compat.ReplayEffects.reset();
+        com.replaymod.replay.compat.ReplayVehicleClock.invalidate();
         Preconditions.checkState(mc.isCallingFromMinecraftThread(), "Must be called from Minecraft thread.");
 
         channel.close();
@@ -141,7 +147,7 @@ public class ReplayHandler {
         // Force re-creation of camera entity by unloading the previous world
         // We need to re-set the GUI screen because having one with `allowsUserInput = true` active during world
         // load (i.e. before player is set) will crash MC...
-        mc.displayGuiScreen(new net.minecraft.client.gui.GuiScreen() {});
+        if (!keepEditorVisible()) mc.displayGuiScreen(new net.minecraft.client.gui.GuiScreen() {});
         mc.loadWorld(null);
 
         restrictions = new Restrictions();
@@ -152,6 +158,9 @@ public class ReplayHandler {
     public void endReplay() throws IOException {
         Preconditions.checkState(mc.isCallingFromMinecraftThread(), "Must be called from Minecraft thread.");
 
+        closing = true;
+        com.replaymod.replay.compat.ReplayAircraftExport.close();
+        if (editorSeek != null) editorSeek.cancel();
         ReplayClosingCallback.EVENT.invoker().replayClosing(this);
 
         fullReplaySender.terminateReplay();
@@ -206,7 +215,8 @@ public class ReplayHandler {
                 t.printStackTrace();
             }
         };
-        mc.displayGuiScreen(new GuiOpeningReplay(networkManager));
+        editorNetwork = networkManager;
+        if (!keepEditorVisible()) mc.displayGuiScreen(new GuiOpeningReplay(networkManager));
         FMLClientHandler.instance().connectToRealmsServer(null, 0); // just to init the playClientBlock latch
 
         networkManager.setNetHandler(new NetHandlerLoginClient(
@@ -341,8 +351,85 @@ public class ReplayHandler {
         }
     }
 
+    public boolean isEditorSeeking() { return editorSeek != null && editorSeek.pending(); }
+    public boolean isEditorSeekRunning() { return editorSeek != null && editorSeek.working(); }
+    public boolean isApplyingEditorSeek() { return applyingEditorSeek; }
+    public int editorSeekTarget() { return editorSeek == null ? -1 : editorSeek.target(); }
+    public boolean keepEditorVisible() {
+        return !closing && (isEditorSeeking() && mc.currentScreen == editorSeekOwner
+                || mc.currentScreen instanceof com.replaymod.studio.CinematicEditor && ((com.replaymod.studio.CinematicEditor) mc.currentScreen).ownsWorkspace(this));
+    }
+    public void releaseEditorSender() {
+        if (!closing && !isEditorSeeking() && editorWasAsync) {
+            editorWasAsync = false; fullReplaySender.setAsyncMode(true);
+        }
+    }
+    public void requestEditorSeek(int target, boolean dragging, net.minecraft.client.gui.GuiScreen owner) {
+        Preconditions.checkState(mc.isCallingFromMinecraftThread(), "Seek requests must run on the game thread.");
+        if (target < 0 || target > replayDuration) throw new IllegalArgumentException("Replay time is outside this recording.");
+        editorSeekOwner = owner;
+        if (editorSeek == null) editorSeek = new EditorSeek(new EditorSeek.Backend() {
+            @Override public int position() { return fullReplaySender.currentTimeStamp(); }
+            @Override public void begin() {
+                CameraEntity camera = getCameraEntity();
+                if (camera != null) targetCameraPosition = new Location(camera.posX, camera.posY, camera.posZ, camera.rotationYaw, camera.rotationPitch);
+                editorWasAsync |= fullReplaySender.isAsyncMode();
+                fullReplaySender.setSyncModeAndWait(); fullReplaySender.stopHurrying(); fullReplaySender.setReplaySpeed(0);
+                com.replaymod.replay.compat.ReplayEffects.beginSeek();
+                mc.getSoundHandler().stopSounds();
+            }
+            @Override public boolean advance(int target, long budget) {
+                applyingEditorSeek = true;
+                try { return fullReplaySender.sendPacketsTillSlice(target, budget, () -> editorNetwork.processReceivedPackets()); }
+                finally { applyingEditorSeek = false; }
+            }
+            @Override public void finish() {
+                applyingEditorSeek = true;
+                try {
+                editorNetwork.processReceivedPackets();
+                if (mc.theWorld != null && mc.thePlayer != null) {
+                    mc.runTick();
+                    for (Entity entity : new ArrayList<Entity>(mc.theWorld.loadedEntityList)) {
+                        skipTeleportInterpolation(entity);
+                        entity.lastTickPosX = entity.prevPosX = entity.posX;
+                        entity.lastTickPosY = entity.prevPosY = entity.posY;
+                        entity.lastTickPosZ = entity.prevPosZ = entity.posZ;
+                        entity.prevRotationYaw = entity.rotationYaw; entity.prevRotationPitch = entity.rotationPitch;
+                    }
+                    com.replaymod.replay.compat.ReplayVehicleClock.invalidate();
+                    moveCameraToTargetPosition();
+                }
+                } finally { applyingEditorSeek = false; }
+            }
+            @Override public void release() {
+                com.replaymod.replay.compat.ReplayEffects.endSeek();
+                if (!closing) { fullReplaySender.setReplaySpeed(0); if (!keepEditorVisible()) releaseEditorSender(); }
+            }
+        });
+        editorSeek.request(target, dragging, System.currentTimeMillis());
+    }
+    public void tickEditorSeek() {
+        // Let an existing legacy async jump finish its main-thread restart before
+        // taking its monitor; waiting for it here could deadlock that restart.
+        if (fullReplaySender.isAsyncMode() && fullReplaySender.isHurrying()) return;
+        if (editorSeek != null) editorSeek.tick(System.currentTimeMillis());
+    }
+
+    /** Registration callbacks may run inside the synchronous sender on the game thread. */
+    public void processReplayPackets() {
+        if (editorNetwork != null) editorNetwork.processReceivedPackets();
+    }
+
+    public void cancelEditorSeek() {
+        if (editorSeek != null) editorSeek.cancel();
+    }
+
     public void doJump(int targetTime, boolean retainCameraPosition) {
+        if (mc.currentScreen instanceof com.replaymod.studio.CinematicEditor && keepEditorVisible()) {
+            requestEditorSeek(targetTime, false, mc.currentScreen); return;
+        }
         com.replaymod.replay.compat.ReplayEffects.beginSeek();
+        mc.getSoundHandler().stopSounds();
         try {
         FullReplaySender replaySender = fullReplaySender;
 
@@ -368,6 +455,8 @@ public class ReplayHandler {
         // Seeking from the overlay must not start an async worker behind their back.
         if (!replaySender.isAsyncMode()) {
             replaySender.sendPacketsTill(targetTime);
+            mc.getNetHandler().getNetworkManager().processReceivedPackets();
+            settleVehiclePoses();
             moveCameraToTargetPosition();
             return;
         }
@@ -425,6 +514,7 @@ public class ReplayHandler {
                     entity.prevRotationPitch = entity.rotationPitch;
                 }
                 mc.runTick();
+                settleVehiclePoses();
 
                 //finally, updating the camera's position (which is not done by the sync jumping)
                 moveCameraToTargetPosition();
@@ -437,6 +527,9 @@ public class ReplayHandler {
     }
 
     private void skipTeleportInterpolation(Entity entity) {
+        if (entity instanceof com.replaymod.replay.compat.ReplayVehiclePose) {
+            ((com.replaymod.replay.compat.ReplayVehiclePose) entity).replayMod$settlePose();
+        }
         if (entity instanceof EntityOtherPlayerMP) {
             EntityOtherPlayerMP e = (EntityOtherPlayerMP) entity;
             EntityOtherPlayerMPAccessor ea = (EntityOtherPlayerMPAccessor) e;
@@ -444,5 +537,14 @@ public class ReplayHandler {
             e.rotationYaw = (float) ea.getOtherPlayerMPYaw();
             e.rotationPitch = (float) ea.getOtherPlayerMPPitch();
         }
+    }
+
+    public void settleVehiclePoses() {
+        if (mc.theWorld != null) for (Object entity : mc.theWorld.loadedEntityList) {
+            if (entity instanceof com.replaymod.replay.compat.ReplayVehiclePose) {
+                ((com.replaymod.replay.compat.ReplayVehiclePose) entity).replayMod$settlePose();
+            }
+        }
+        com.replaymod.replay.compat.ReplayVehicleClock.invalidate();
     }
 }

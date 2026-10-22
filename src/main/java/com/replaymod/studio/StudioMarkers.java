@@ -16,6 +16,7 @@ public final class StudioMarkers extends StudioScreen {
     private GuiTextField name, time;
     private int offset;
     public StudioMarkers(ReplayHandler replay) { this.replay = replay; }
+    @Override protected StudioViewport createViewport() { return new StudioViewport(width, height, 90, 40, 770, 460, false); }
     @Override protected void build() {
         name = field(530, 132, 310, name != null ? name.getText() : selected == null || selected.getName() == null ? "Scene marker" : selected.getName());
         time = field(530, 190, 310, time != null ? time.getText() : StudioTime.format(selected == null ? replay.getReplaySender().currentTimeStamp() : selected.getTime()));
@@ -29,7 +30,7 @@ public final class StudioMarkers extends StudioScreen {
         offset = Math.min(offset, Math.max(0, markers.size() - 1));
     }
     @Override protected void drawContent(int x, int y, float partialTicks) {
-        drawRect(0, 0, 960, 540, 0xB0101720); panel(90, 40, 770, 460, "SCENE MARKERS");
+        panel(90, 40, 770, 460, "SCENE MARKERS");
         label("Bookmark an event or camera view. Markers do not change the cinematic path.", 110, 76, MUTED);
         label("Name", 530, 114, MUTED); label("Replay time", 530, 172, MUTED);
         for (int i = 0; i < 13 && offset + i < markers.size(); i++) {

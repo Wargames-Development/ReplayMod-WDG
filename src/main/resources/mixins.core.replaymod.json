@@ -8,6 +8,8 @@
     "ResourcePackRepositoryAccessor",
     "MixinKeyboardListener",
     "MixinMinecraft",
+    "MixinStudioWorkspace",
+    "MixinStudioLoadingScreen",
     "GuiScreenAccessor",
     "KeyBindingAccessor",
     "MinecraftAccessor",

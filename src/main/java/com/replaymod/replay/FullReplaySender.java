@@ -181,6 +181,7 @@ public class FullReplaySender extends ChannelDuplexHandler implements ReplaySend
      * Whether to terminate the replay. This only has an effect on the async mode and is {@code true} during sync mode.
      */
     protected boolean terminate;
+    private boolean replayTerminated;
 
     /**
      * The speed of the replay. 1 is normal, 2 is twice as fast, 0.5 is half speed and 0 is frozen
@@ -295,9 +296,10 @@ public class FullReplaySender extends ChannelDuplexHandler implements ReplaySend
      * Terminate this replay sender.
      */
     public void terminateReplay() {
-        if (terminate) {
+        if (replayTerminated) {
             return;
         }
+        replayTerminated = true;
         terminate = true;
         events.unregister();
         try {
@@ -703,7 +705,11 @@ public class FullReplaySender extends ChannelDuplexHandler implements ReplaySend
                                     long now = System.currentTimeMillis();
                                     // If the packet should not yet be sent, wait a bit
                                     if (expectedTime > now) {
-                                        Thread.sleep(expectedTime - now);
+                                        // Keep pause/sync takeover responsive even across
+                                        // long gaps with no recorded packets. Re-evaluate
+                                        // speed and seek flags before dispatching anything.
+                                        Thread.sleep(Math.min(10, expectedTime - now));
+                                        continue;
                                     }
                                 }
 
@@ -823,6 +829,53 @@ public class FullReplaySender extends ChannelDuplexHandler implements ReplaySend
     //        Synchronous packet processing                //
     /////////////////////////////////////////////////////////
 
+    /** A bounded main-thread seek slice. Export/playback keep their exact blocking API below. */
+    public boolean sendPacketsTillSlice(int timestamp, long budgetNanos, Runnable processPackets) {
+        Preconditions.checkState(!asyncMode, "Editor seek must own the synchronous sender.");
+        if (ctx == null) return false;
+        long started = System.nanoTime();
+        try {
+            synchronized (this) {
+                if (timestamp < lastTimeStamp && hasWorldLoaded) {
+                    rewindEditorSeek();
+                    // World teardown itself may consume the frame budget.
+                    if (System.nanoTime() - started >= budgetNanos) return false;
+                }
+                for (int count = 0; count < 64; count++) {
+                    if (count > 0 && System.nanoTime() - started >= budgetNanos) return false;
+                    if (nextPacket == null) {
+                        try { nextPacket = readEditorSeekPacket(); }
+                        catch (EOFException end) {
+                            if (!hasWorldLoaded) throw new IOException("The recording ended before its initial world finished loading.");
+                            lastTimeStamp = timestamp; return true;
+                        }
+                    }
+                    if (nextPacket.timestamp > timestamp && hasWorldLoaded) { lastTimeStamp = timestamp; return true; }
+                    PacketData packet = nextPacket; nextPacket = null;
+                    channelRead(ctx, packet.bytes);
+                    // Drain each packet now instead of accumulating thousands of
+                    // expensive chunk/entity handlers for the next Minecraft tick.
+                    processPackets.run();
+                    // At video/replay zero, initial login packets may arrive a
+                    // little later. Finish that initial world once, in bounded
+                    // slices, instead of repeatedly rewinding an empty world.
+                    lastTimeStamp = hasWorldLoaded ? Math.min(timestamp, packet.timestamp) : packet.timestamp;
+                }
+                return false;
+            }
+        } catch (Exception error) { throw new IllegalStateException("Could not update the replay preview.", error); }
+    }
+    protected PacketData readEditorSeekPacket() throws IOException {
+        if (replayIn == null) replayIn = replayFile.getPacketData(getPacketTypeRegistry(true));
+        return new PacketData(replayIn, loginPhase);
+    }
+    protected void rewindEditorSeek() throws IOException {
+        hasWorldLoaded = false; lastTimeStamp = 0;
+        if (replayIn != null) { replayIn.close(); replayIn = null; }
+        loginPhase = true; startFromBeginning = false; nextPacket = null;
+        replayHandler.restartedReplay();
+    }
+
     /**
      * Sends all packets until the specified timestamp is reached (inclusive).
      * If the timestamp is smaller than the last packet sent, the replay is restarted from the beginning.
@@ -853,10 +906,6 @@ public class FullReplaySender extends ChannelDuplexHandler implements ReplaySend
                     replayHandler.restartedReplay();
                 }
 
-                if (replayIn == null) {
-                    replayIn = replayFile.getPacketData(getPacketTypeRegistry(true));
-                }
-
                 while (true) { // Send packets
                     try {
                         PacketData pd;
@@ -866,7 +915,7 @@ public class FullReplaySender extends ChannelDuplexHandler implements ReplaySend
                             nextPacket = null;
                         } else {
                             // Otherwise read one from the input stream
-                            pd = new PacketData(replayIn, loginPhase);
+                            pd = readEditorSeekPacket();
                         }
 
                         int nextTimeStamp = pd.timestamp;
@@ -878,6 +927,10 @@ public class FullReplaySender extends ChannelDuplexHandler implements ReplaySend
 
                         // Process packet
                         channelRead(ctx, pd.bytes);
+                        // Login/JoinGame must be applied before the next REGISTER
+                        // packet enters Forge's handshake handlers. Also bounds the
+                        // receive queue during synchronous preview and export.
+                        processSyncPackets();
                     } catch (EOFException eof) {
                         // Shit! We hit the end before finishing our job! What shall we do now?
                         // well, let's just pretend we're done...
@@ -894,6 +947,21 @@ public class FullReplaySender extends ChannelDuplexHandler implements ReplaySend
             }
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    protected void processSyncPackets() {
+        replayHandler.processReplayPackets();
+    }
+
+    protected static void settleChunkUnloadPose(Entity entity) {
+        if (entity instanceof com.replaymod.replay.compat.ReplayVehiclePose) {
+            // MCHR can settle its network target directly. Four simulation ticks
+            // also advance flight, wheels, rotors and effects during chunk handoff.
+            ((com.replaymod.replay.compat.ReplayVehiclePose)entity).replayMod$settlePose();
+        } else {
+            // Vanilla's longest network interpolation needs four updates.
+            for (int i = 0; i < 4; i++) entity.onUpdate();
         }
     }
 
@@ -919,13 +987,7 @@ public class FullReplaySender extends ChannelDuplexHandler implements ReplaySend
                     entitiesInChunk.addAll(entityList);
                 }
                 for (Entity entity : entitiesInChunk) {
-                    // Skip interpolation of position updates coming from server
-                    // (See: newX in EntityLivingBase or otherPlayerMPX in EntityOtherPlayerMP)
-                    // Needs to be called at least 4 times thanks to
-                    // EntityOtherPlayerMP#otherPlayerMPPosRotationIncrements (max vanilla value is 3)
-                    for (int i = 0; i < 4; i++) {
-                        entity.onUpdate();
-                    }
+                    settleChunkUnloadPose(entity);
 
                     // Check whether the entity has left the chunk
                     int chunkX = MathHelper.floor_double(entity.posX / 16);
@@ -967,12 +1029,14 @@ public class FullReplaySender extends ChannelDuplexHandler implements ReplaySend
         return p; // During synchronous playback everything is sent normally
     }
 
-    private static final class PacketData {
+    protected static final class PacketData {
         private static final com.github.steveice10.netty.buffer.ByteBuf byteBuf = com.github.steveice10.netty.buffer.Unpooled.buffer();
         private static final NetOutput netOutput = new ByteBufNetOutput(byteBuf);
 
         private final int timestamp;
         private final byte[] bytes;
+
+        PacketData(int timestamp, byte[] bytes) { this.timestamp = timestamp; this.bytes = bytes; }
 
         PacketData(ReplayInputStream in, boolean loginPhase) throws IOException {
             if (ReplayMod.isMinimalMode()) {

@@ -24,16 +24,20 @@ public final class StudioExport extends StudioScreen {
     private final GuiScreen parent;
     private final ReplayHandler replay;
     private final GuiPathing pathing;
-    private GuiTextField widthField, heightField, fps, bitrate, output, executable, arguments, chroma, fovX, fovY;
+    private GuiTextField widthField, heightField, fps, bitrate, output, filename, executable, arguments, chroma, fovX, fovY;
     private String widthText = "1920", heightText = "1080", fpsText = "60", bitrateText = "12", fileText, exeText = "", argsText = "";
     private boolean advanced, nametags = true, highPerformance, cameraExport, sphericalMetadata;
     private boolean lockYaw, lockPitch, lockRoll;
     private boolean audio = true;
+    private boolean showPreview = false;
+    private boolean recoverTerrain;
     private String chromaText = "", fovXText = "360", fovYText = "180";
     private RenderSettings.RenderMethod method = RenderSettings.RenderMethod.DEFAULT;
     private RenderSettings.EncodingPreset preset = RenderSettings.EncodingPreset.MP4_DEFAULT;
     private RenderSettings.AntiAliasing aa = RenderSettings.AntiAliasing.NONE;
     private boolean rendering;
+    private String filenameAtBuild;
+    private String filenameError = "", invalidFilename;
 
     public StudioExport(GuiScreen parent, ReplayHandler replay, GuiPathing pathing) {
         this.parent = parent; this.replay = replay; this.pathing = pathing;
@@ -42,6 +46,8 @@ public final class StudioExport extends StudioScreen {
             if (Files.exists(ReplayModRender.instance.getRenderSettingsPath())) {
                 JsonObject saved = new JsonParser().parse(new String(Files.readAllBytes(ReplayModRender.instance.getRenderSettingsPath()), StandardCharsets.UTF_8)).getAsJsonObject();
                 if (saved.has("renderAudio") && !saved.get("renderAudio").isJsonNull()) audio = saved.get("renderAudio").getAsBoolean();
+                if (saved.has("showPreview") && !saved.get("showPreview").isJsonNull()) showPreview = saved.get("showPreview").getAsBoolean();
+                if (saved.has("recoverRecordedTerrain")) recoverTerrain=saved.get("recoverRecordedTerrain").getAsBoolean();
                 if (saved.has("videoWidth")) widthText = saved.get("videoWidth").getAsString();
                 if (saved.has("videoHeight")) heightText = saved.get("videoHeight").getAsString();
                 if (saved.has("framesPerSecond")) fpsText = saved.get("framesPerSecond").getAsString();
@@ -74,19 +80,25 @@ public final class StudioExport extends StudioScreen {
             }
         } catch (Exception ignored) { /* A damaged prior preference file must not block export. */ }
     }
+    @Override protected StudioViewport createViewport() { return new StudioViewport(width, height, 70, 24, 820, 484, true); }
+    @Override protected void drawBackdrop(int x, int y, float partialTicks) { drawRect(0, 0, width, height, 0xFF111B24); }
     @Override protected void build() {
         button(1, 90, 66, 230, "Video settings"); button(2, 330, 66, 230, "Advanced settings");
         if (!advanced) {
+            checkBox(33,610,408,250,"Show preview while rendering",showPreview);
             widthField = field(100, 132, 100, widthText); heightField = field(220, 132, 100, heightText);
             fps = field(350, 132, 100, fpsText); bitrate = field(480, 132, 100, bitrateText);
-            output = field(100, 206, 640, fileText); button(3, 752, 205, 108, "Browse...");
+            output = field(100, 190, 640, fileText); button(3, 752, 189, 108, "Browse...");
+            filenameAtBuild = outputBaseName(new File(fileText));
+            filename = field(100, 232, 760, filenameError != null && !filenameError.isEmpty() ? invalidFilename : filenameAtBuild);
             button(4, 100, 260, 350, "Format: " + preset.toString());
             button(5, 470, 260, 390, "Rendering: " + method.toString());
             button(6, 100, 298, 230, "Name tags: " + (nametags ? "On" : "Off"));
             button(7, 340, 298, 250, "Antialiasing: " + aa.toString()).enabled = preset != RenderSettings.EncodingPreset.PNG && method != RenderSettings.RenderMethod.BLEND;
-            button(8, 600, 298, 260, "Live preview: " + (!highPerformance ? "On" : "Once per second"));
+            button(8, 600, 298, 260, "Progress refresh: " + (!highPerformance ? "Every frame" : "Once per second"));
             button(32, 600, 350, 260, "Game audio: " + (audio ? "On" : "Off"));
-            button(30, 610, 132, 120, "1080p preset"); button(31, 740, 132, 120, "4K preset");
+            button(30, 610, 132, 76, "1080p");
+            button(34, 692, 132, 82, "1440p/60"); button(31, 780, 132, 80, "4K/60");
         } else {
             executable = field(100, 134, 640, exeText); button(9, 752, 133, 108, "Browse...");
             arguments = field(100, 206, 760, argsText); arguments.setMaxStringLength(4096);
@@ -98,27 +110,58 @@ public final class StudioExport extends StudioScreen {
             button(20, 400, 342, 140, "Lock roll: " + (lockRoll ? "On" : "Off"));
             chroma = field(610, 343, 150, chromaText);
             fovX = field(100, 378, 100, fovXText); fovY = field(220, 378, 100, fovYText);
+            checkBox(35,100,414,760,"Fill missing terrain from later recorded snapshots",recoverTerrain);
         }
         button(13, 100, 458, 180, "Back to editor");
         button(14, 300, 458, 220, "Open output folder");
         button(15, 620, 458, 240, "Render video");
-        button(16, 100, 408, 230, "Add this video to queue");
-        button(17, 340, 408, 250, "Open render queue");
+        if (!advanced) {
+            button(16, 100, 408, 230, "Add this video to queue");
+            button(17, 340, 408, 250, "Open render queue");
+        }
     }
+    static String outputBaseName(File file) {
+        String name = file.getName();
+        return name.replaceFirst("(?i)\\.(mp4|mkv|webm|png|blend)$", "");
+    }
+    @Override protected void mouseClicked(int x, int y, int button) {
+        boolean selectName = !advanced && filename != null && !filename.isFocused() && button == 0
+                && hit(logicalX(x), logicalY(y), filename.xPosition, filename.yPosition, filename.width, filename.height);
+        super.mouseClicked(x, y, button);
+        if (selectName) { filename.setCursorPositionEnd(); filename.setSelectionPos(0); }
+    }
+    static File namedOutput(File path, String name, String extension) {
+        name = name.trim();
+        if (name.isEmpty() || name.equals(".") || name.equals("..") || name.matches(".*[\\\\/:*?\"<>|].*"))
+            throw new IllegalArgumentException("Enter an output filename without folder separators or special filename characters.");
+        if (!extension.isEmpty()) name = outputBaseName(new File(name)) + "." + extension;
+        return new File(path.getAbsoluteFile().getParentFile(), name);
+    }
+    @Override protected String fieldHelp(int index) { return StudioHelp.exportField(advanced, index); }
     private void remember() {
         if (!advanced) {
             widthText = widthField.getText(); heightText = heightField.getText(); fpsText = fps.getText(); bitrateText = bitrate.getText(); fileText = output.getText();
+            filenameError = "";
+            if (!filename.getText().equals(new File(fileText).getName())) {
+                // Editing the full path still works. The name box takes priority
+                // only when the user changes it from the last displayed name.
+                if (!filename.getText().equals(filenameAtBuild)) {
+                    try { fileText = namedOutput(new File(fileText), filename.getText(), preset == RenderSettings.EncodingPreset.PNG ? "" : preset.getFileExtension()).getPath(); }
+                    catch (IllegalArgumentException error) { filenameError = error.getMessage(); invalidFilename = filename.getText(); }
+                }
+            }
         } else {
             exeText = executable.getText(); argsText = arguments.getText(); chromaText = chroma.getText(); fovXText = fovX.getText(); fovYText = fovY.getText();
         }
     }
     @Override protected void drawContent(int x, int y, float partialTicks) {
-        drawRect(0, 0, 960, 540, 0xC0101720); panel(70, 24, 820, 484, "EXPORT CINEMATIC");
+        panel(70, 24, canvasWidth - 70, canvasHeight - 24, "EXPORT CINEMATIC");
         if (!advanced) {
             label("Width", 100, 114, MUTED); label("Height", 220, 114, MUTED); label("Frames / second", 350, 114, MUTED); label("Bitrate (Mbps)", 480, 114, MUTED);
-            label(preset == RenderSettings.EncodingPreset.PNG ? "Image sequence folder (created automatically)" : "Full output filename", 100, 186, MUTED);
+            label(preset == RenderSettings.EncodingPreset.PNG ? "Image sequence folder (created automatically)" : "Full output path", 100, 174, MUTED);
+            label(preset == RenderSettings.EncodingPreset.PNG ? "Image sequence folder name" : "Output file name", 100, 216, MUTED);
             label(preset == RenderSettings.EncodingPreset.PNG ? "Game audio saves as a WAV beside the images." : "Game audio follows the exported video timeline.", 100, 356, MUTED);
-            label("Start with 1920 x 1080 at 30 or 60 fps. Export does not change your recording.", 100, 376, MUTED);
+            label("1440p/60 and 4K/60 presets use high bitrate MP4. Shaders stay enabled during export.", 100, 376, MUTED);
         } else {
             label("FFmpeg executable (blank = detect automatically)", 100, 114, MUTED);
             label("Custom encoder arguments (blank = selected preset)", 100, 186, MUTED);
@@ -126,6 +169,7 @@ public final class StudioExport extends StudioScreen {
             label("Chroma RGB hex (blank = off)", 610, 328, MUTED);
             label("Horizontal FOV", 100, 365, MUTED); label("Vertical FOV", 220, 365, MUTED);
             label("Spherical export: crop the 360-degree view.", 350, 383, MUTED);
+            label("Uses the first recorded terrain; later damage may appear earlier. Existing chunks take priority.",100,439,MUTED);
         }
     }
     @Override protected void activate(int id) {
@@ -133,23 +177,21 @@ public final class StudioExport extends StudioScreen {
         switch (id) {
             case 1: advanced = false; initGui(); break;
             case 2: advanced = true; initGui(); break;
-            case 3: mc.displayGuiScreen(new StudioFilePicker(this, new File(fileText), file -> { fileText = file.getAbsolutePath(); output.setText(fileText); })); break;
+            case 3: mc.displayGuiScreen(new StudioFilePicker(this, new File(fileText), file -> { fileText = file.getAbsolutePath(); filenameError = ""; output.setText(fileText); })); break;
             case 4:
                 RenderSettings.EncodingPreset[] formats = { RenderSettings.EncodingPreset.MP4_DEFAULT, RenderSettings.EncodingPreset.MP4_CUSTOM, RenderSettings.EncodingPreset.MKV_LOSSLESS, RenderSettings.EncodingPreset.WEBM_CUSTOM, RenderSettings.EncodingPreset.PNG };
                 int index = java.util.Arrays.asList(formats).indexOf(preset); preset = formats[(index + 1) % formats.length];
                 if (method == RenderSettings.RenderMethod.BLEND) method = RenderSettings.RenderMethod.DEFAULT;
                 if (preset == RenderSettings.EncodingPreset.PNG) aa = RenderSettings.AntiAliasing.NONE;
                 argsText = "";
-                int dot = fileText.lastIndexOf('.'); if (dot > fileText.lastIndexOf(File.separatorChar)) fileText = fileText.substring(0, dot);
-                fileText += "." + preset.getFileExtension(); initGui(); break;
+                fileText = namedOutput(new File(fileText), outputBaseName(new File(fileText)), preset.getFileExtension()).getPath(); initGui(); break;
             case 5:
                 RenderSettings.RenderMethod previousMethod = method;
                 RenderSettings.RenderMethod[] methods = RenderSettings.RenderMethod.getSupported();
                 method = methods[(java.util.Arrays.asList(methods).indexOf(method) + 1) % methods.length];
                 if (method == RenderSettings.RenderMethod.BLEND || previousMethod == RenderSettings.RenderMethod.BLEND) {
                     preset = method == RenderSettings.RenderMethod.BLEND ? RenderSettings.EncodingPreset.BLEND : RenderSettings.EncodingPreset.MP4_DEFAULT;
-                    int extension = fileText.lastIndexOf('.'); if (extension > fileText.lastIndexOf(File.separatorChar)) fileText = fileText.substring(0, extension);
-                    fileText += "." + preset.getFileExtension(); argsText = "";
+                    fileText = namedOutput(new File(fileText), outputBaseName(new File(fileText)), preset.getFileExtension()).getPath(); argsText = "";
                 }
                 initGui(); break;
             case 6: nametags = !nametags; initGui(); break;
@@ -162,16 +204,27 @@ public final class StudioExport extends StudioScreen {
             case 13: escape(); break;
             case 14: MCVer.openFile(new File(fileText).getAbsoluteFile().getParentFile()); break;
             case 15: render(false); break;
+            case 35: recoverTerrain=!recoverTerrain; initGui(); break;
             case 16: render(true); break;
             case 17: mc.displayGuiScreen(new StudioRenderQueue(this, replay)); break;
             case 18: lockYaw = !lockYaw; initGui(); break;
             case 19: lockPitch = !lockPitch; initGui(); break;
             case 20: lockRoll = !lockRoll; initGui(); break;
             case 30: widthText = "1920"; heightText = "1080"; initGui(); break;
-            case 31: widthText = "3840"; heightText = "2160"; initGui(); break;
+            case 31: trailerPreset(true); initGui(); break;
+            case 34: trailerPreset(false); initGui(); break;
             case 32: audio = !audio; initGui(); break;
+            case 33: showPreview = !showPreview; initGui(); break;
             default: break;
         }
+    }
+    private void trailerPreset(boolean fourK) {
+        widthText = fourK ? "3840" : "2560"; heightText = fourK ? "2160" : "1440";
+        fpsText = "60"; bitrateText = fourK ? "100" : "50";
+        method = RenderSettings.RenderMethod.DEFAULT; preset = RenderSettings.EncodingPreset.MP4_CUSTOM;
+        aa = RenderSettings.AntiAliasing.NONE; nametags = false; argsText = "";
+        sphericalMetadata = false;
+        fileText = namedOutput(new File(fileText), outputBaseName(new File(fileText)), "mp4").getPath();
     }
     private int positive(String value, String label, int max) {
         try { int number = Integer.parseInt(value.trim()); if (number <= 0 || number > max) throw new NumberFormatException(); return number; }
@@ -179,6 +232,7 @@ public final class StudioExport extends StudioScreen {
     }
     private void render(boolean queue) {
         if (rendering) return;
+        if (filenameError != null && !filenameError.isEmpty()) throw new IllegalArgumentException(filenameError);
         if (ReplayModSimplePathing.instance.getCurrentTimeline().getPositionPath().getSegments().isEmpty()
                 || ReplayModSimplePathing.instance.getCurrentTimeline().getTimePath().getSegments().isEmpty()) throw new IllegalArgumentException("Add at least two camera shots with replay times before exporting.");
         int w = positive(widthText, "Width", 16384), h = positive(heightText, "Height", 16384), rate = positive(fpsText, "Frame rate", 240);
@@ -186,7 +240,8 @@ public final class StudioExport extends StudioScreen {
         if ((long) w * h * 4 * aa.getFactor() * aa.getFactor() > 256 * 1024 * 1024 || w * aa.getFactor() > 16384 || h * aa.getFactor() > 16384) throw new IllegalArgumentException("Resolution with antialiasing exceeds the 256 MB / 16384-pixel frame limit.");
         if (preset.isYuv420() && (w % 2 != 0 || h % 2 != 0)) throw new IllegalArgumentException("MP4 / WEBM width and height must both be even.");
         if (method == RenderSettings.RenderMethod.CUBIC && (h % 3 != 0 || w != h / 3 * 4)) throw new IllegalArgumentException("Cube export uses a 4:3 image, with height divisible by 3.");
-        File file = new File(fileText).getAbsoluteFile();
+        File requestedFile = new File(fileText).getAbsoluteFile();
+        File file = preset == RenderSettings.EncodingPreset.PNG ? requestedFile : namedOutput(requestedFile, requestedFile.getName(), preset.getFileExtension());
         if (file.exists()) throw new IllegalArgumentException("That file already exists. Choose a new filename to preserve it.");
         if (sphericalMetadata && !method.isSpherical()) throw new IllegalArgumentException("360 metadata requires a spherical rendering method.");
         int horizontalFov = positive(fovXText, "Horizontal FOV", 360), verticalFov = positive(fovYText, "Vertical FOV", 180);
@@ -210,6 +265,8 @@ public final class StudioExport extends StudioScreen {
                 lockYaw, lockPitch, lockRoll, chromaColour, horizontalFov, verticalFov, sphericalMetadata, false, cameraExport, aa, exeText,
                 argsText.trim().isEmpty() ? preset.getValue() : argsText, highPerformance);
         settings.setRenderAudio(audio);
+        settings.setShowPreview(showPreview);
+        settings.setRecoverRecordedTerrain(recoverTerrain);
         Timeline timeline = pathing.preparePathsForPlayback(false);
         if (timeline == null) throw new IllegalArgumentException("The path is invalid. Check that replay times always move forward.");
         if (queue) {

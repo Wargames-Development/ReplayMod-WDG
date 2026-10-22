@@ -7,8 +7,6 @@ import com.google.common.primitives.Longs;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 import com.replaymod.core.mixin.MinecraftAccessor;
-import com.replaymod.core.mixin.TimerAccessor;
-import com.replaymod.core.utils.WrappedTimer;
 import com.replaymod.replay.ReplayHandler;
 import com.replaymod.replaystudio.pathing.path.Keyframe;
 import com.replaymod.replaystudio.pathing.path.Path;
@@ -33,8 +31,11 @@ public abstract class AbstractTimelinePlayer extends EventRegistrations {
     private boolean wasAsyncMode;
     private long lastTime;
     private long lastTimestamp;
+    private boolean firstFrame;
     private ListenableFuture<Void> future;
     private SettableFuture<Void> settableFuture;
+    private ReplayTimer playbackTimer;
+    private long playbackPosition;
 
     public AbstractTimelinePlayer(ReplayHandler replayHandler) {
         this.replayHandler = replayHandler;
@@ -46,6 +47,8 @@ public abstract class AbstractTimelinePlayer extends EventRegistrations {
     }
 
     public ListenableFuture<Void> start(Timeline timeline) {
+        if (isActive()) throw new IllegalStateException("Timeline is already playing.");
+        finishPlayback();
         this.timeline = timeline;
 
         Iterator<Keyframe> iter = Iterables.concat(Iterables.transform(timeline.getPaths(),
@@ -74,16 +77,21 @@ public abstract class AbstractTimelinePlayer extends EventRegistrations {
         replayHandler.getReplaySender().setSyncModeAndWait();
         register();
         lastTime = 0;
+        firstFrame = true;
+        playbackPosition = Math.min(startOffset, lastTimestamp);
 
         MinecraftAccessor mcA = (MinecraftAccessor) mc;
-        ReplayTimer timer = new ReplayTimer(mcA.getTimer());
+        ReplayTimer timer = createPlaybackTimer(mcA.getTimer());
+        playbackTimer = timer;
         mcA.setTimer(timer);
 
-        //noinspection ConstantConditions
-        TimerAccessor timerA = (TimerAccessor) timer;
         timer.timerSpeed = 1;
         timer.elapsedPartialTicks = timer.elapsedTicks = 0;
-        return future = settableFuture = SettableFuture.create();
+        future = settableFuture = SettableFuture.create();
+        // Release the timer and event listener before any completion callback can
+        // start another run. Waiting for the next tick can nest replay timers.
+        future.addListener(this::finishPlayback, Runnable::run);
+        return future;
     }
 
     public ListenableFuture<Void> getFuture() {
@@ -94,18 +102,25 @@ public abstract class AbstractTimelinePlayer extends EventRegistrations {
         return future != null && !future.isDone();
     }
 
+    /** Last frame actually applied, also stable after completion or cancellation. */
+    public long getPlaybackPosition() { return playbackPosition; }
+
+    protected ReplayTimer createPlaybackTimer(Timer wrapped) { return new ReplayTimer(wrapped); }
+
+    private void finishPlayback() {
+        ReplayTimer timer = playbackTimer;
+        if (timer == null) return;
+        playbackTimer = null;
+        MinecraftAccessor mcA = (MinecraftAccessor) mc;
+        if (mcA.getTimer() == timer) mcA.setTimer(timer.getWrapped());
+        unregister();
+        replayHandler.getReplaySender().setReplaySpeed(0);
+        if (wasAsyncMode) replayHandler.getReplaySender().setAsyncMode(true);
+    }
+
     { on(ReplayTimer.UpdatedCallback.EVENT, this::onTick); }
     public void onTick() {
-        if (future.isDone()) {
-            MinecraftAccessor mcA = (MinecraftAccessor) mc;
-            mcA.setTimer(((ReplayTimer) mcA.getTimer()).getWrapped());
-            replayHandler.getReplaySender().setReplaySpeed(0);
-            if (wasAsyncMode) {
-                replayHandler.getReplaySender().setAsyncMode(true);
-            }
-            unregister();
-            return;
-        }
+        if (!isActive()) return;
         long time = getTimePassed();
         if (time > lastTimestamp) {
             time = lastTimestamp;
@@ -115,6 +130,12 @@ public abstract class AbstractTimelinePlayer extends EventRegistrations {
         timeline.applyToGame(time, replayHandler);
         // Apply a second time in case same of the packets have moved the camera from where it was
         timeline.applyToGame(time, replayHandler);
+
+        if (firstFrame) {
+            firstFrame = false;
+            mc.getNetHandler().getNetworkManager().processReceivedPackets();
+            replayHandler.settleVehiclePoses();
+        }
 
         // Update minecraft timer
         long replayTime = replayHandler.getReplaySender().currentTimeStamp();
@@ -134,6 +155,7 @@ public abstract class AbstractTimelinePlayer extends EventRegistrations {
         }
 
         lastTime = replayTime;
+        playbackPosition = time;
 
         if (time >= lastTimestamp) {
             settableFuture.set(null);

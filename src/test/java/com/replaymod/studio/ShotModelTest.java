@@ -13,6 +13,28 @@ public class ShotModelTest {
     private ShotModel shots;
     @Before public void prepare() { timeline = new SPTimeline(); timeline.setDefaultInterpolatorType(InterpolatorType.CATMULL_ROM); shots = new ShotModel(timeline); }
     private void add(long output, int replay) { shots.save(-1, output, replay, output / 1000.0, 80, 12, 30, -5, 0); }
+    @Test public void aSecondCaptureAtTheSameCursorAppendsInsteadOfOverwritingTheStart() {
+        assertEquals(0,shots.capture(0,2000,5000,false,true,30000,10,80,12,0,0,0));
+        assertEquals(2000,shots.capture(0,2000,5000,false,true,30000,20,80,12,0,0,0));
+        assertEquals(2,shots.times().size());
+        assertEquals(10,timeline.getPositionPath().getKeyframe(0).getValue(CameraProperties.POSITION).get().getLeft(),0);
+        assertEquals(Integer.valueOf(7000),timeline.getTimePath().getKeyframe(2000).getValue(TimestampProperty.PROPERTY).get());
+        timeline.getTimeline().undoLastChange(); assertEquals(1,shots.times().size());
+    }
+    @Test public void endingCameraUsesAnEmptyChosenSlotOrCreatesOneAfterTheLastPoint() {
+        add(0,1000); add(2000,3000);
+        assertEquals(4000,shots.capture(0,2000,3000,true,true,30000,40,80,12,0,0,0));
+        assertEquals(8000,shots.capture(8000,2000,9000,true,true,30000,50,80,12,0,0,0));
+        assertEquals(Integer.valueOf(9000),timeline.getTimePath().getKeyframe(8000).getValue(TimestampProperty.PROPERTY).get());
+    }
+    @Test public void endingCameraRequiresAStartAndRespectsFrozenActionAndRecordingEnd() {
+        try { shots.capture(0,2000,1000,true,true,3000,0,80,12,0,0,0); fail(); } catch(IllegalArgumentException expected) { }
+        add(0,2500);
+        try { shots.capture(0,2000,2500,true,true,3000,0,80,12,0,0,0); fail(); } catch(IllegalArgumentException expected) { }
+        assertEquals(1,shots.times().size());
+        assertEquals(2000,shots.capture(0,2000,2500,true,false,3000,0,80,12,0,0,0));
+        assertEquals(Integer.valueOf(2500),timeline.getTimePath().getKeyframe(2000).getValue(TimestampProperty.PROPERTY).get());
+    }
     @Test public void pairedShotIsOneUndoStepAndRedoRestoresBothTracks() {
         add(0, 5000);
         assertEquals(1, timeline.getPositionPath().getKeyframes().size());

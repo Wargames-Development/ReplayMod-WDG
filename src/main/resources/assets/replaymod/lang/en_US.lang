@@ -322,9 +322,9 @@ replaymod.input.assetmanager=Asset Manager
 replaymod.input.objectmanager=Object Manager
 replaymod.input.settings=ReplayMod Settings
 replaymod.input.quickmode=Quick Mode
-replaymod.input.positionkeyframe=Capture Cinematic Shot (Camera and Time)
+replaymod.input.positionkeyframe=Capture Starting / Additional Camera
 replaymod.input.positiononlykeyframe=Position Keyframe
-replaymod.input.timekeyframe=Edit Replay Clock
+replaymod.input.timekeyframe=Capture Ending Camera
 replaymod.input.bothkeyframes=Position/Spectator + Time Keyframe
 
 # CameraControllers

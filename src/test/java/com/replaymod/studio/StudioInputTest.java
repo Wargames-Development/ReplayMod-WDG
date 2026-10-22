@@ -9,6 +9,23 @@ import java.lang.reflect.Field;
 import static org.junit.Assert.*;
 
 public class StudioInputTest {
+    @Test public void newPressCancelsOldDragAndButtonMotionCannotKeepDraggingTheTimeline() throws Exception {
+        TestScreen screen = new TestScreen();
+        Field allocator = Unsafe.class.getDeclaredField("theUnsafe"); allocator.setAccessible(true);
+        Minecraft mc = (Minecraft)((Unsafe)allocator.get(null)).allocateInstance(Minecraft.class);
+        screen.mc=mc; mc.currentScreen=screen;
+        Field viewport=StudioScreen.class.getDeclaredField("viewport"); viewport.setAccessible(true);
+        viewport.set(screen,new StudioViewport(480,270,960,540)); screen.build();
+        screen.mouseClicked(200,200,0); screen.mouseClickMove(210,200,0,10);
+        assertEquals(1,screen.canvasDrags);
+        screen.mouseClicked(60,55,0); screen.mouseClickMove(65,55,0,10);
+        assertEquals(1,screen.cancelled); assertEquals(1,screen.canvasDrags);
+        screen.mouseClicked(200,200,0);
+        java.lang.reflect.Method finish=StudioScreen.class.getDeclaredMethod("finishCanvasDrag",int.class,int.class,int.class);
+        finish.setAccessible(true); finish.invoke(screen,400,400,0);
+        screen.mouseReleased(200,200,0); // queued native release after frame polling
+        assertEquals(1,screen.canvasReleases);
+    }
     @Test public void buttonValidationRemainsVisibleAndDoesNotAlsoScrubTheTimeline() throws Exception {
         TestScreen screen = new TestScreen();
         Field allocatorField = Unsafe.class.getDeclaredField("theUnsafe"); allocatorField.setAccessible(true);
@@ -47,29 +64,32 @@ public class StudioInputTest {
             Field allocatorField = Unsafe.class.getDeclaredField("theUnsafe"); allocatorField.setAccessible(true);
             Minecraft minecraft = (Minecraft) ((Unsafe) allocatorField.get(null)).allocateInstance(Minecraft.class);
             screen.mc = minecraft; minecraft.currentScreen = screen;
-            StudioViewport mapping = new StudioViewport(size[0], size[1], 960, 580, true);
+            StudioViewport mapping = new StudioViewport(size[0], size[1], 1120, 720, true);
             StudioEditorLayout layout = new StudioEditorLayout(mapping.canvasWidth, mapping.canvasHeight);
             Field viewport = StudioScreen.class.getDeclaredField("viewport"); viewport.setAccessible(true); viewport.set(screen, mapping);
             screen.buildRightAnchored(layout);
-            screen.mouseClicked(Math.round(layout.right(872) * mapping.scale), Math.round(22 * mapping.scale), 0);
+            screen.mouseClicked(Math.round((layout.width - 86) * mapping.scale), Math.round(22 * mapping.scale), 0);
             assertEquals("Choose a valid output filename", screen.message);
             assertEquals(0, screen.canvasClicks);
         }
     }
     private static final class TestScreen extends StudioScreen {
-        int canvasClicks;
+        int canvasClicks,canvasDrags,canvasReleases,cancelled;
         @Override protected void build() {
             buttonList.add(new GuiButton(1, 100, 100, 100, 20, "Export") {
                 @Override public void playPressSound(SoundHandler unused) { }
             });
         }
         void buildRightAnchored(StudioEditorLayout layout) {
-            buttonList.add(new GuiButton(1, layout.right(800), 12, 144, 20, "Export") {
+            buttonList.add(new GuiButton(1, layout.width - 164, 12, 156, 20, "Export") {
                 @Override public void playPressSound(SoundHandler unused) { }
             });
         }
         @Override protected void drawContent(int x, int y, float partialTicks) { }
         @Override protected void activate(int id) { throw new IllegalArgumentException("Choose a valid output filename"); }
         @Override protected void clicked(int x, int y, int button) { canvasClicks++; }
+        @Override protected void dragged(int x,int y,int button) { canvasDrags++; }
+        @Override protected void released(int x,int y,int button) { canvasReleases++; }
+        @Override protected void cancelledDrag() { cancelled++; }
     }
 }

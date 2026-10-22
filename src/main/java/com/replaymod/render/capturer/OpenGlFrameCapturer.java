@@ -79,6 +79,10 @@ public abstract class OpenGlFrameCapturer<F extends Frame, D extends CaptureData
     protected OpenGlFrame renderFrame(int frameId, float partialTicks, D captureData) {
         com.replaymod.render.rendering.VideoRenderer renderer = renderInfo instanceof com.replaymod.render.rendering.VideoRenderer ? (com.replaymod.render.rendering.VideoRenderer) renderInfo : null;
         long nextProgress = 0;
+        long terrainStarted = System.currentTimeMillis();
+        boolean angelica=renderer!=null && cpw.mods.fml.common.Loader.isModLoaded("angelica");
+        if (angelica) com.replaymod.replay.compat.ReplayTerrainReadiness.beginFrame();
+        if (renderer!=null) com.replaymod.replay.compat.ReplayTerrainExport.prepareFrame();
         do {
             resizeMainWindow(mc, getFrameWidth(), getFrameHeight());
             pushMatrix();
@@ -95,8 +99,11 @@ public abstract class OpenGlFrameCapturer<F extends Frame, D extends CaptureData
                 popMatrix();
             }
 
-            if (renderer == null || com.replaymod.replay.compat.DistantHorizonsReplay.renderReady()) break;
-            renderer.setStage("Loading Distant Horizons terrain for this camera view...");
+            boolean chunksReady=!angelica || com.replaymod.replay.compat.ReplayTerrainReadiness.afterPass();
+            boolean lodsReady=renderer==null || com.replaymod.replay.compat.DistantHorizonsReplay.renderReady();
+            if (renderer == null || (chunksReady && lodsReady)) break;
+            if (System.currentTimeMillis()-terrainStarted>120000) throw new IllegalStateException("Terrain did not stabilize for this output frame within two minutes.");
+            renderer.setStage("Finishing terrain and shadows for this camera view...");
             if (System.currentTimeMillis() >= nextProgress) {
                 if (!renderer.drawGui()) throw new IllegalStateException("Render cancelled while loading LOD terrain.");
                 nextProgress = System.currentTimeMillis() + 200;

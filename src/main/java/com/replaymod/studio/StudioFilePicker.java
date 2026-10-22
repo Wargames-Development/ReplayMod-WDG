@@ -22,6 +22,8 @@ public final class StudioFilePicker extends StudioScreen {
         directory = file.isDirectory() ? file.getAbsoluteFile() : file.getAbsoluteFile().getParentFile();
         filenameDraft = file.isDirectory() ? "video.mp4" : file.getName();
     }
+    @Override protected StudioViewport createViewport() { return new StudioViewport(width, height, 80, 30, 800, 480, true); }
+    @Override protected void drawBackdrop(int x, int y, float partialTicks) { drawRect(0, 0, width, height, 0xFF111B24); }
     @Override protected void build() {
         location = field(100, 80, 640, directory.getAbsolutePath());
         filename = field(100, 426, 640, filenameDraft);
@@ -38,7 +40,7 @@ public final class StudioFilePicker extends StudioScreen {
         location.setText(directory.getAbsolutePath()); locationDraft = null; offset = 0;
     }
     @Override protected void drawContent(int x, int y, float partialTicks) {
-        drawRect(0, 0, 960, 540, 0xC0101720); panel(80, 30, 800, 480, "CHOOSE OUTPUT / EXECUTABLE");
+        panel(80, 30, canvasWidth - 80, canvasHeight - 30, "CHOOSE OUTPUT / EXECUTABLE");
         label("Folder path (you can type a drive or network path)", 100, 62, MUTED);
         label("Filename", 100, 410, MUTED);
         for (int i = 0; entries != null && i < 11 && offset + i < entries.size(); i++) {

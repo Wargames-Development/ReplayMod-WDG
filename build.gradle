@@ -107,6 +107,10 @@ repositories {
 }
 
 dependencies {
+    // UniMixins is supplied by the 1.7.10 modpack. Its late loader waits until
+    // Forge has added ordinary mods (including unpacked MCHR) to the classpath.
+    compileOnly files('libs/UniMixins-0.2.1-late-api.jar')
+    testRuntime files('libs/UniMixins-0.2.1-late-api.jar')
     annotationProcessor 'org.spongepowered:mixin:0.7.11-SNAPSHOT'
     compileOnly 'org.spongepowered:mixin:0.7.11-SNAPSHOT'
     shade('org.spongepowered:mixin:0.7.11-SNAPSHOT') {
@@ -149,6 +153,9 @@ compileJava {
 // Minecraft's packet classes initialize logging even in headless packet tests.
 test {
     workingDir = file("$buildDir/test-runtime")
+    if (System.getenv('REPLAYMOD_TEST_GL_NATIVES')) {
+        systemProperty 'org.lwjgl.librarypath', System.getenv('REPLAYMOD_TEST_GL_NATIVES')
+    }
     doFirst {
         workingDir.mkdirs()
     }

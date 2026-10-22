@@ -107,10 +107,7 @@ public class ReplayModSimplePathing extends EventRegistrations implements Module
             if (guiPathing != null) guiPathing.toggleKeyframe(SPPath.POSITION, true);
         }, true);
         keyTimeKeyframe = core.getKeyBindingRegistry().registerKeyBinding("replaymod.input.timekeyframe", Keyboard.KEY_O, () -> {
-            if (guiPathing != null) {
-                com.replaymod.studio.CinematicEditor editor = ReplayModReplay.instance.getReplayHandler().getOverlay().getStudioEditor();
-                core.getMinecraft().displayGuiScreen(editor); editor.focusReplayClock();
-            }
+            if (guiPathing != null) com.replaymod.studio.CinematicEditor.captureCurrentShot(ReplayModReplay.instance.getReplayHandler(), true);
         }, true);
         core.getKeyBindingRegistry().registerKeyBinding("replaymod.input.bothkeyframes", 0, () -> {
             if (guiPathing != null) {

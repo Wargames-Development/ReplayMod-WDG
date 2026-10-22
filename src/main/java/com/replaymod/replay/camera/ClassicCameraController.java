@@ -131,7 +131,7 @@ public class ClassicCameraController implements CameraController {
         }
 
         Vector3f movement = direction.normalise(null);
-        double factor = motion * (frac / 1000D);
+        double factor = motion * (frac / 1000D) * (com.replaymod.core.utils.Utils.isCtrlDown() ? 8 : 1);
 
         camera.moveCamera(movement.x * factor, movement.y * factor, movement.z * factor);
     }

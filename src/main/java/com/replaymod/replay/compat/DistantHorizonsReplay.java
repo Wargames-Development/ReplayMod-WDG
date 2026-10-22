@@ -23,6 +23,8 @@ public final class DistantHorizonsReplay {
     private static boolean wasReady;
     private static long stableSince, loadStarted, lastSignature = Long.MIN_VALUE;
     private static int cameraCellX = Integer.MIN_VALUE, cameraCellZ;
+    private static long lastPreviewTick;
+    private static boolean previewTickWarning;
     private DistantHorizonsReplay() { }
     public static boolean available() {
         try { Class.forName("com.seibel.distanthorizons.api.DhApi", false, DistantHorizonsReplay.class.getClassLoader()); return true; }
@@ -140,6 +142,21 @@ public final class DistantHorizonsReplay {
         protectTerrain();
     }
     public static void beginExport() { wasReady = false; cameraCellX = Integer.MIN_VALUE; lastSignature = Long.MIN_VALUE; stableSince = loadStarted = System.currentTimeMillis(); }
+    public static void tickPreview() {
+        if (!active || System.currentTimeMillis() - lastPreviewTick < 200) return;
+        lastPreviewTick = System.currentTimeMillis();
+        try {
+            Object world = Class.forName("com.seibel.distanthorizons.core.api.internal.SharedApi").getMethod("tryGetDhClientWorld").invoke(null);
+            if (world == null) return;
+            for (Object level : (Iterable<?>) call(world, "getAllLoadedLevels", new Class<?>[0])) {
+                Object wrapper = call(level, "getLevelWrapper", new Class<?>[0]);
+                if (call(wrapper, "getWrappedMcObject", new Class<?>[0]) == Minecraft.getMinecraft().theWorld) call(level.getClass().getField("clientside").get(level), "clientTick", new Class<?>[0]);
+            }
+        } catch (ReflectiveOperationException error) {
+            if (!previewTickWarning) com.replaymod.compat.ReplayModCompat.LOGGER.warn("Could not tick the DH viewer independently of replay time", error);
+            previewTickWarning = true;
+        }
+    }
     /** Tick the render tree even when replay time is frozen and Minecraft has no elapsed game ticks. */
     public static boolean renderReady() {
         if (!active) return true;

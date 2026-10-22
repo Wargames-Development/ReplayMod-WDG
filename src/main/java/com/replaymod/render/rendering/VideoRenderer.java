@@ -158,6 +158,14 @@ public class VideoRenderer implements RenderInfo {
         // Because this might take some time to prepare we'll render the GUI at least once to not confuse the user
         drawGui();
 
+        stage = "Reading recorded aircraft poses...";
+        drawGui();
+        com.replaymod.replay.compat.ReplayAircraftExport.begin(replayHandler);
+        stage = "Reading recorded terrain...";
+        drawGui();
+        com.replaymod.replay.compat.ReplayTerrainExport.begin(replayHandler,settings.isRecoverRecordedTerrain());
+        stage = "";
+
         Timer timer = ((MinecraftAccessor) mc).getTimer();
 
         // Play up to one second before starting to render
@@ -170,16 +178,22 @@ public class VideoRenderer implements RenderInfo {
         if (optionalVideoStartTime.isPresent()) {
             int videoStart = optionalVideoStartTime.get();
 
-            if (videoStart > 1000) {
-                int replayTime = videoStart - 1000;
+            if (videoStart > 0) {
+                int replayTime = Math.max(0, videoStart - 1000);
                 timer.elapsedPartialTicks = timer.renderPartialTicks = 0;
                 timer.timerSpeed = 1;
+                // Position first, so sounds from the skipped part are not mistaken for current sounds.
+                replayHandler.getReplaySender().sendPacketsTill(replayTime);
+                if (audio != null) audio.beginWarmup();
                 while (replayTime < videoStart) {
                     timer.elapsedTicks = 1;
-                    replayTime += 50;
+                    int step = Math.min(50, videoStart - replayTime);
+                    replayTime += step;
                     replayHandler.getReplaySender().sendPacketsTill(replayTime);
                     tick();
+                    if (audio != null) audio.advanceWarmup(step);
                 }
+                if (audio != null) audio.endWarmup();
             }
         }
 
@@ -219,6 +233,8 @@ public class VideoRenderer implements RenderInfo {
 
         return !cancelled;
         } finally {
+            com.replaymod.replay.compat.ReplayAircraftExport.end();
+            com.replaymod.replay.compat.ReplayTerrainExport.end();
             if (!finished) {
                 cancel();
                 try { renderingPipeline.close(); }
@@ -418,16 +434,27 @@ public class VideoRenderer implements RenderInfo {
     }
 
     public boolean drawGui() {
+        // Capture resizes Minecraft to the output frame. Progress/input must
+        // always use the physical window, including terrain-wait draws made
+        // between capture passes. Restore capture dimensions even on failure.
+        if (displaySizeChanged()) {
+            updateDisplaySize();
+            guiFramebuffer.createBindFramebuffer(displayWidth,displayHeight);
+        }
+        return drawAtWindowSize(mc,displayWidth,displayHeight,this::drawWindowGui);
+    }
+    static boolean drawAtWindowSize(Minecraft mc,int width,int height,java.util.function.BooleanSupplier draw) {
+        int captureWidth=mc.displayWidth, captureHeight=mc.displayHeight;
+        mc.displayWidth=width; mc.displayHeight=height;
+        try {
+            return draw.getAsBoolean();
+        } finally { mc.displayWidth=captureWidth; mc.displayHeight=captureHeight; }
+    }
+    private boolean drawWindowGui() {
         Window window = new com.replaymod.core.versions.Window(mc);
         do {
             if (GLFW.glfwWindowShouldClose(window.getHandle()) || ((MinecraftAccessor) mc).getCrashReporter() != null) {
                 return false;
-            }
-
-            // Resize the GUI framebuffer if the display size changed
-            if (displaySizeChanged()) {
-                updateDisplaySize();
-                guiFramebuffer.createBindFramebuffer(mc.displayWidth, mc.displayHeight);
             }
 
             pushMatrix();
@@ -457,13 +484,9 @@ public class VideoRenderer implements RenderInfo {
             guiFramebuffer.framebufferRender(displayWidth, displayHeight);
             popMatrix();
 
-            // if not in high performance mode, update the gui size if screen size changed
-            // otherwise just swap the progress gui to screen
-            if (settings.isHighPerformance()) {
-                Display.update();
-            } else {
-                mc.resetSize();
-            }
+            // Do not reset/resize the capture framebuffer or GUI between frames.
+            // High performance mode controls draw frequency in updateForNextFrame.
+            Display.update();
             if (Mouse.isGrabbed()) {
                 Mouse.setGrabbed(false);
             }

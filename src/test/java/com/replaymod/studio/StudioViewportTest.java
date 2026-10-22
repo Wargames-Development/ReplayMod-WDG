@@ -21,15 +21,15 @@ public class StudioViewportTest {
     }
     @Test public void fullWindowEditorFillsWideAndTallWindowsAndKeepsTimelineHitsAligned() {
         for (int[] size : new int[][]{{1920, 1080}, {3440, 1440}, {800, 600}, {1280, 1024}, {1080, 1920}, {320, 180}}) {
-            StudioViewport viewport = new StudioViewport(size[0], size[1], 960, 580, true);
+            StudioViewport viewport = new StudioViewport(size[0], size[1], 1120, 720, true);
             StudioEditorLayout layout = new StudioEditorLayout(viewport.canvasWidth, viewport.canvasHeight);
             assertEquals(0, viewport.x); assertEquals(0, viewport.y);
             // Integer logical extents round by at most half a logical pixel.
             assertEquals(size[0], viewport.canvasWidth * viewport.scale, viewport.scale / 2 + 0.001);
             assertEquals(size[1], viewport.canvasHeight * viewport.scale, viewport.scale / 2 + 0.001);
-            assertEquals(viewport.canvasWidth - 16, layout.right(708) + 236);
-            assertEquals(viewport.canvasHeight - 64, layout.videoTop + 22);
-            assertTrue(80 + (layout.shotRows - 1) * 22 + 20 < layout.bottom(290));
+            assertEquals(viewport.canvasWidth - 16, 94 + layout.trackWidth);
+            assertEquals(viewport.canvasHeight - 48, layout.laneBottom);
+            assertTrue(78 + (layout.shotRows - 1) * 26 + 23 < layout.timelineTop - 130);
             int tick = TimelineGraphics.pixel(5000, 0, 10000, 94, layout.trackWidth);
             int actualX = Math.round(tick * viewport.scale), actualY = Math.round((layout.videoTop + 11) * viewport.scale);
             assertEquals(tick, viewport.logicalX(actualX), Math.ceil(1 / viewport.scale));

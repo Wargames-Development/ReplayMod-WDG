@@ -55,7 +55,7 @@ public class VanillaCameraController implements CameraController {
         );
         // Adjust for current speed
         // We transform speed to blocks per second: x->2^(x/300+1)
-        direction.scale((float) Math.pow(2, speed / 300d + 1));
+        direction.scale((float) Math.pow(2, speed / 300d + 1) * (com.replaymod.core.utils.Utils.isCtrlDown() ? 8 : 1));
         // Adjust for time passed
         direction.scale(partialTicksPassed / 20);
         // Actually move

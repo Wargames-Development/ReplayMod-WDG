@@ -116,9 +116,7 @@ public class ReplayModReplay implements Module {
         keyPlayPause = registry.registerKeyBinding("replaymod.input.playpause", Keyboard.KEY_P, new Runnable() {
             @Override
             public void run() {
-                if (replayHandler != null) {
-                    replayHandler.getOverlay().playPauseButton.onClick();
-                }
+                toggleFreeCameraPlayback(core.getMinecraft(), replayHandler);
             }
         }, true);
 
@@ -133,6 +131,30 @@ public class ReplayModReplay implements Module {
         core.getKeyBindingRegistry().registerKeyBinding("replaymod.input.resettilt", Keyboard.KEY_K, () -> {
             Optional.ofNullable(replayHandler).map(ReplayHandler::getCameraEntity).ifPresent(c -> c.roll = 0);
         }, true);
+    }
+
+    public static void toggleFreeCameraPlayback(net.minecraft.client.Minecraft mc, ReplayHandler handler) {
+        if (handler == null || mc.currentScreen != null) return;
+        ReplaySender sender = handler.getReplaySender();
+        sender.setReplaySpeed(sender.paused() ? handler.getOverlay().getSpeedSliderValue() : 0);
+        // Pausing action must not turn free flight into an invisible GUI. Other
+        // mods may also release the mouse on P, so explicitly recapture it.
+        handler.getOverlay().setMouseVisible(false);
+        mc.setIngameFocus();
+        mc.mouseHelper.grabMouseCursor();
+    }
+
+    /** Repair focus after the complete input/tick pass, including while replay time is paused. */
+    public static void keepFreeCameraCaptured(Minecraft mc, ReplayHandler handler, boolean windowActive, boolean mouseGrabbed) {
+        if (handler == null || !windowActive || handler.getCameraEntity() == null) return;
+        net.minecraft.client.gui.GuiScreen screen = mc.currentScreen;
+        boolean legacyInput = handler.getOverlay().ownsInputScreen(screen);
+        // Studio menus, dialogs and other mods' screens retain their own mouse.
+        if (screen != null && !legacyInput) return;
+        if (!legacyInput && mc.inGameHasFocus && mouseGrabbed && !handler.getOverlay().isMouseVisible()) return;
+        handler.getOverlay().setMouseVisible(false);
+        mc.setIngameFocus();
+        mc.mouseHelper.grabMouseCursor();
     }
 
     @Override

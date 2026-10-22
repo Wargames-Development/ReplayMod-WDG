@@ -72,6 +72,23 @@ public class GuiReplayOverlay extends AbstractGuiOverlay<GuiReplayOverlay> {
         return studioEditor;
     }
     public void resetStudioEditor() { studioEditor = null; }
+    public boolean ownsInputScreen(net.minecraft.client.gui.GuiScreen screen) {
+        return screen instanceof AbstractGuiOverlay<?>.UserInputGuiScreen
+                && ((AbstractGuiOverlay<?>.UserInputGuiScreen) screen).getOverlay() == this;
+    }
+
+    public static boolean rejectReplayAmmoScreen(ReplayHandler replay, GuiOpenEvent event) {
+        // FMUR also binds P to this screen and may run after our key callback.
+        // With no held gun it draws nothing, but Minecraft still releases the
+        // mouse. Cancel before displayGuiScreen changes focus; replay cameras
+        // never select live ammunition. No FMUR dependency or rebind is needed.
+        if (replay != null && event.gui != null
+                && "com.flansmod.client.gui.GuiSelectAmmo".equals(event.gui.getClass().getName())) {
+            event.setCanceled(true);
+            return true;
+        }
+        return false;
+    }
 
     public GuiReplayOverlay(final ReplayHandler replayHandler) {
         timeline = new GuiMarkerTimeline(replayHandler){
@@ -204,11 +221,12 @@ public class GuiReplayOverlay extends AbstractGuiOverlay<GuiReplayOverlay> {
         { on(KeyBindingEventCallback.EVENT, this::onKeyBindingEvent); }
         private void onKeyBindingEvent() {
             GameSettings gameSettings = getMinecraft().gameSettings;
-            while (gameSettings.keyBindChat.isPressed() || gameSettings.keyBindCommand.isPressed()) {
+            while (gameSettings.keyBindChat.isPressed()) {
                 if (!isMouseVisible()) {
                     setMouseVisible(true);
                 }
             }
+            while (gameSettings.keyBindCommand.isPressed()) { /* Commands have no editor shortcut in a replay. */ }
         }
 
         { on(KeyEventCallback.EVENT, (key, scanCode, action, modifiers) -> onKeyInput(key, action)); }
@@ -217,12 +235,16 @@ public class GuiReplayOverlay extends AbstractGuiOverlay<GuiReplayOverlay> {
             GameSettings gameSettings = getMinecraft().gameSettings;
             // Read the configured keys before KeyBinding's single-entry-per-key
             // lookup or another mod can consume their press counters.
+            if (getMinecraft().currentScreen == null && key != 0 && key == mod.keyPlayPause.keyBinding.getKeyCode()) {
+                if (!org.lwjgl.input.Keyboard.isRepeatEvent()) com.replaymod.replay.ReplayModReplay.toggleFreeCameraPlayback(getMinecraft(), mod.getReplayHandler());
+                return true;
+            }
             if (getMinecraft().currentScreen == null && key != 0
-                    && (key == gameSettings.keyBindChat.getKeyCode()
-                    || key == gameSettings.keyBindCommand.getKeyCode())) {
+                    && key == gameSettings.keyBindChat.getKeyCode()) {
                 setMouseVisible(true);
                 return true;
             }
+            if (getMinecraft().currentScreen == null && key != 0 && key == gameSettings.keyBindCommand.getKeyCode()) return true;
             // Allow F1 to be used to hide the replay gui (e.g. for recording with OBS)
             if (isMouseVisible() && key == Keyboard.KEY_F1) {
                 hidden = !hidden;
@@ -232,6 +254,7 @@ public class GuiReplayOverlay extends AbstractGuiOverlay<GuiReplayOverlay> {
 
         @SubscribeEvent
         public void onGuiOpen(GuiOpenEvent event) {
+            if (rejectReplayAmmoScreen(mod.getReplayHandler(), event)) return;
             if (event.gui instanceof net.minecraft.client.gui.GuiIngameMenu && mod.getReplayHandler() != null
                     && com.replaymod.simplepathing.ReplayModSimplePathing.instance.getGuiPathing() != null) {
                 event.setCanceled(true);
@@ -239,10 +262,9 @@ public class GuiReplayOverlay extends AbstractGuiOverlay<GuiReplayOverlay> {
                 return;
             }
             // A mod can still open chat directly after the raw key callback.
-            // Keep the overlay's input screen so timeline buttons receive clicks.
+            // Suppress it without turning the command shortcut into an editor shortcut.
             if (event.gui instanceof GuiChat) {
                 event.setCanceled(true);
-                setMouseVisible(true);
             }
         }
     }
