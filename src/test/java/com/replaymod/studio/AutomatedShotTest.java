@@ -28,7 +28,8 @@ public class AutomatedShotTest {
             AutomatedShot.Plan world=AutomatedShot.generate(s,moving,60000),stationary=AutomatedShot.generate(s,frozen,60000);
             for(int i=0;i<world.frames.size();i++) {
                 AutomatedShot.Frame a=world.frames.get(i),b=stationary.frames.get(i);
-                assertEquals(b.x,a.x,0); assertEquals(b.y,a.y,0); assertEquals(b.z,a.z,0); assertLooksAtTarget(a,2);
+                assertEquals(b.x,a.x,0); assertEquals(b.y,a.y,0); assertEquals(b.z,a.z,0);
+                if(kind!=AutomatedShot.Kind.MOUNTED) assertLooksAtTarget(a,2);
             }
             s.space=AutomatedShot.Space.VEHICLE;
             AutomatedShot.Plan vehicle=AutomatedShot.generate(s,moving,60000);
@@ -40,7 +41,8 @@ public class AutomatedShotTest {
                 double yaw=Math.toRadians(a.target.yaw),dx=a.x-a.target.x,dz=a.z-a.target.z;
                 assertEquals(b.x,Math.cos(yaw)*dx+Math.sin(yaw)*dz,1e-8);
                 assertEquals(b.z,-Math.sin(yaw)*dx+Math.cos(yaw)*dz,1e-8);
-                assertEquals(b.y,a.y-a.target.y,1e-8); assertLooksAtTarget(a,2);
+                assertEquals(b.y,a.y-a.target.y,1e-8);
+                if(kind!=AutomatedShot.Kind.MOUNTED) assertLooksAtTarget(a,2);
             }
         }
     }

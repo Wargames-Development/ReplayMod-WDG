@@ -14,7 +14,7 @@ import java.util.TreeSet;
 
 /** Camera generation is pure; only an explicit placement changes the project. */
 public final class AutomatedShot {
-    public enum Kind { ORBIT, FOLLOW, FLY_BY }
+    public enum Kind { ORBIT, FOLLOW, FLY_BY, MOUNTED }
     public enum Ease { LINEAR, IN_OUT, IN, OUT }
     public enum Space { WORLD, VEHICLE }
     public interface Target {
@@ -22,8 +22,11 @@ public final class AutomatedShot {
         default void validateRange(int from,int to) { }
     }
     public static final class Pose {
-        public final double x,y,z; public final float yaw;
-        public Pose(double x,double y,double z,float yaw) { this.x=x; this.y=y; this.z=z; this.yaw=yaw; }
+        public final double x,y,z; public final float yaw,pitch,roll;
+        public Pose(double x,double y,double z,float yaw) { this(x,y,z,yaw,0,0); }
+        public Pose(double x,double y,double z,float yaw,float pitch,float roll) {
+            this.x=x; this.y=y; this.z=z; this.yaw=yaw; this.pitch=pitch; this.roll=roll;
+        }
     }
     public static final class Settings {
         public Kind kind=Kind.ORBIT;
@@ -34,6 +37,9 @@ public final class AutomatedShot {
         public int replayIn,replayOut,samplesPerSecond=60;
         public double distanceStart=24,distanceEnd=24,heightStart=10,heightEnd=10;
         public double angleStart=180,angleChange=180,focusHeight=2,rollStart,rollEnd;
+        // Mounted shots use distance/height/angle as local side/up/forward offsets.
+        public double viewYaw,viewPitch;
+        public boolean followYaw=true,followPitch=true,followRoll=true;
     }
     public static final class Frame {
         public final long time; public final int replay;
@@ -59,20 +65,30 @@ public final class AutomatedShot {
             throw new IllegalArgumentException("Choose a video duration from 0.1 seconds to 5 minutes, inside the video clock.");
         if(s.replayIn<0 || s.replayOut<s.replayIn || s.replayOut>recordingDuration)
             throw new IllegalArgumentException("Replay Out must be at or after In, inside the recording. Equal times freeze action.");
-        double[] values={s.distanceStart,s.distanceEnd,s.heightStart,s.heightEnd,s.angleStart,s.angleChange,s.focusHeight,s.rollStart,s.rollEnd};
+        double[] values={s.distanceStart,s.distanceEnd,s.heightStart,s.heightEnd,s.angleStart,s.angleChange,s.focusHeight,s.rollStart,s.rollEnd,s.viewYaw,s.viewPitch};
         for(double value:values) if(!Double.isFinite(value) || Math.abs(value)>1000000) throw new IllegalArgumentException("Use finite camera values within one million.");
-        if(s.kind!=Kind.FLY_BY && (s.distanceStart<0.5 || s.distanceEnd<0.5)) throw new IllegalArgumentException("Camera distance must be at least 0.5 blocks.");
-        if(s.kind!=Kind.FLY_BY && Math.abs(s.angleChange)>7200) throw new IllegalArgumentException("Limit one shot to 20 turns. Split longer rotations into several shots.");
+        if(s.kind!=Kind.FLY_BY && s.kind!=Kind.MOUNTED && (s.distanceStart<0.5 || s.distanceEnd<0.5)) throw new IllegalArgumentException("Camera distance must be at least 0.5 blocks.");
+        if(s.kind!=Kind.FLY_BY && s.kind!=Kind.MOUNTED && Math.abs(s.angleChange)>7200) throw new IllegalArgumentException("Limit one shot to 20 turns. Split longer rotations into several shots.");
         if(s.samplesPerSecond<1 || s.samplesPerSecond>60) throw new IllegalArgumentException("Path detail must be between 1 and 60 samples per second.");
         target.validateRange(s.replayIn,s.replayOut);
         Pose anchor=validPose(target,s.replayIn);
         ShotCurve clockCurve=s.curve.onClock(s.duration);
         TreeSet<Long> times=sampleTimes(s);
-        TreeMap<Long,Frame> indexed=new TreeMap<>(); float lastYaw=0;
+        TreeMap<Long,Frame> indexed=new TreeMap<>(); float lastYaw=0; float[] lastRotation=null;
         for(long time:times) {
             double t=(time-s.outputStart)/(double)s.duration,u=ease(t,s.ease);
             int replay=(int)Math.round(s.replayIn+t*(s.replayOut-(double)s.replayIn));
             Pose p=validPose(target,replay),origin=s.space==Space.VEHICLE?p:anchor;
+            if(s.kind==Kind.MOUNTED) {
+                ShotCurve.Point offset=clockCurve.at(t);
+                double[] position=MountedCamera.rotate(origin.yaw,origin.pitch,origin.roll,
+                        lerp(s.distanceStart,s.distanceEnd,u)+offset.x,lerp(s.heightStart,s.heightEnd,u)+offset.y,
+                        lerp(s.angleStart,s.angleChange,u)+offset.z);
+                float[] rotation=MountedCamera.rotation(s.followYaw?origin.yaw:0,s.followPitch?origin.pitch:0,s.followRoll?origin.roll:0,
+                        s.viewYaw,s.viewPitch,lerp(s.rollStart,s.rollEnd,u),lastRotation);
+                indexed.put(time,new Frame(time,replay,origin.x+position[0],origin.y+position[1],origin.z+position[2],rotation[0],rotation[1],rotation[2],p));
+                lastRotation=rotation; continue;
+            }
             double heading=s.space==Space.VEHICLE?p.yaw:s.kind==Kind.ORBIT?0:anchor.yaw;
             double distance=lerp(s.distanceStart,s.distanceEnd,u),height=lerp(s.heightStart,s.heightEnd,u);
             double angle=Math.toRadians(s.angleStart+s.angleChange*u+heading);
@@ -102,7 +118,7 @@ public final class AutomatedShot {
     }
     private static Pose validPose(Target target,int replay) {
         Pose p=target.at(replay);
-        if(p==null || !Double.isFinite(p.x) || !Double.isFinite(p.y) || !Double.isFinite(p.z) || !Float.isFinite(p.yaw))
+        if(p==null || !Double.isFinite(p.x) || !Double.isFinite(p.y) || !Double.isFinite(p.z) || !Float.isFinite(p.yaw) || !Float.isFinite(p.pitch) || !Float.isFinite(p.roll))
             throw new IllegalArgumentException("No valid target pose at replay "+StudioTime.format(replay)+".");
         return p;
     }

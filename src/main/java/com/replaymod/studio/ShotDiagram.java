@@ -6,8 +6,11 @@ final class ShotDiagram {
     final View view;
     final int left,top,width,height;
     final double scale,originX,originY;
+    private final boolean mounted;
+    private final AutomatedShot.Pose anchor;
     ShotDiagram(AutomatedShot.Plan plan,View view,int left,int top,int width,int height) {
         this.view=view; this.left=left; this.top=top; this.width=width; this.height=height;
+        mounted=plan.kind==AutomatedShot.Kind.MOUNTED; anchor=plan.frames.get(0).target;
         double minX=Double.POSITIVE_INFINITY,minY=minX,maxX=Double.NEGATIVE_INFINITY,maxY=maxX;
         for(AutomatedShot.Frame f:plan.frames) {
             minX=Math.min(minX,Math.min(f.x,f.target.x)); maxX=Math.max(maxX,Math.max(f.x,f.target.x));
@@ -39,6 +42,10 @@ final class ShotDiagram {
         double dx=pixelsX/scale,dy=view==View.SIDE?-pixelsY/scale:0,dz=view==View.TOP?pixelsY/scale:0;
         double rotation=Math.toRadians(space==AutomatedShot.Space.VEHICLE?handle.target.yaw:0);
         ShotCurve.Point start=original.points.get(index);
+        if(mounted) {
+            double[] offset=MountedCamera.inverse(space==AutomatedShot.Space.VEHICLE?handle.target:anchor,dx,dy,dz);
+            return original.move(index,start.x+offset[0],start.y+offset[1],start.z+offset[2]);
+        }
         // Invert the same heading-only transform used during generation.
         return original.move(index,start.x+Math.cos(rotation)*dx+Math.sin(rotation)*dz,
                 start.y+dy,start.z-Math.sin(rotation)*dx+Math.cos(rotation)*dz);

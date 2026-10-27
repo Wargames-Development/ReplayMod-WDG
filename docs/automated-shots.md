@@ -9,10 +9,12 @@ It does not depend on ReForgedPlay or ReplayMod Cinematics.
    loaded vehicles and MCHR's distant tracked vehicles, or choose a fixed point.
    **Pick aimed / nearby** refreshes the list and uses the camera's centre, falling
    back to the nearest vehicle origin within 12 blocks when nothing is aimed at.
-2. Choose **Orbit**, **Follow**, or **Fly-by**. Orbit defaults to a full turn.
+2. Choose **Orbit**, **Follow**, **Fly-by**, or **Mounted**. Orbit defaults to a full turn.
    Follow keeps a chosen distance/bearing.
    Fly-by travels from a negative along-track offset to a positive one while
    looking at the vehicle, with a separately editable sideways offset.
+   Mounted holds a local camera position on a vehicle and follows its full body
+   rotation. See the wing camera setup below.
 3. Set video duration and replay In/Out. **Set action 1x** advances the action by
    exactly the video duration; **Freeze action** holds the recorded moment while
    the camera moves. The draft reports the resulting action speed.
@@ -22,12 +24,15 @@ It does not depend on ReForgedPlay or ReplayMod Cinematics.
    Easing changes camera offsets, independently of recorded-action speed.
 5. Choose **Reference: Vehicle relative** (the default) or **World relative**.
    Vehicle relative moves and turns the entire path with the recorded vehicle's
-   position and heading. Aircraft pitch and bank do not tilt the camera path;
+   position and heading for Orbit / Follow / Fly-by. Aircraft pitch and bank do
+   not tilt those camera paths;
    camera roll stays under the existing roll controls. World relative anchors
    the path at the target's position at Replay In. Follow/Fly-by also freeze the
    starting heading; world-relative Orbit uses world heading zero. Both modes
    continue aiming at the moving target, independently of the path's reference.
    With a fixed target or frozen action, neither reference follows new movement.
+   Mounted instead uses the full body rotation; its World relative option freezes
+   both the mount position and its reference rotation at Replay In.
 6. The draft updates after typing pauses briefly. Blue is camera travel; green
    is the target's recorded route. Fixed points can be entered as XYZ. Vehicle
    motion is read in the background and cached for the selected vehicle.
@@ -73,8 +78,8 @@ editor's **Samples: On** to edit the individual keys of an already placed shot.
 Tracking uses the chosen entity's MCHR server snapshots in `recording.tmcpr`.
 Snapshots include vehicles outside vanilla tracking distance. The reader validates
 packet framing and bounds, skips chunk bodies without retaining them, caps retained
-samples, checks missing/destroyed entities and rejects gaps over 500 ms. Heading
-interpolation crosses +/-180 degrees by the short route. It never drives a vehicle
+samples, checks missing/destroyed entities and rejects gaps over 500 ms. Heading,
+pitch and bank interpolation crosses +/-180 degrees by the short route. It never drives a vehicle
 or advances a hidden second world. Ordinary source-time interpolation keeps slow
 motion, freeze and export deterministic. Cancellation interrupts background reads.
 
@@ -83,8 +88,9 @@ shared smooth spline between the already eased samples. Short 60 FPS trailer
 shots retain fast target motion more accurately than the older 20 Hz sampling.
 The 600-sample bound reduces sampling density on shots longer than about ten
 seconds. Regenerate older coarse auto shots to benefit from the higher detail;
-existing saved camera keys remain unchanged. They aim at the target's focus
-height; no first-person mounting or spectator keyframes are created. Paths do not
+existing saved camera keys remain unchanged. Orbit / Follow / Fly-by aim at the
+target's focus height; Mounted uses its configured viewing direction. All modes
+save ordinary camera keys, rather than spectator keyframes. Paths do not
 perform terrain or obstacle avoidance; inspect the main viewer before exporting.
 Grouping is editor-only metadata saved on camera keys, and survives normal saved
 paths, clipboard export/import, timing edits and undo/redo. Broken group boundaries
@@ -92,10 +98,39 @@ reveal the remaining samples rather than hide them.
 
 Choosing Follow creates a draft. Use **Place & preview** to see it follow during
 path playback. Flying close to a vehicle or clicking it in free flight does not
-attach the camera; the free-flight spectator controls currently accept players.
+attach the camera; use Mounted and Place & preview for an attached camera shot.
+The free-flight spectator controls currently accept players.
 For moving follow shots, select a vehicle, keep Target motion On, and choose Replay
 Out after In. See the [follow vehicle audit](follow-vehicle-audit.md) for findings
 and the remaining in-game checks.
+
+## Wing camera setup
+
+1. Select a recorded aircraft and choose **Mounted**. Keep **Target motion: On**
+   and **Reference: Vehicle relative**. Set Replay In/Out to the desired action.
+2. Adjust **Side offset**, **Up** and **Forward** in aircraft-local blocks. The
+   starting preset is Side 8, Up 1, Forward 0; aircraft sizes differ, so inspect
+   the main viewer and adjust it to sit just above the wing. Use a negative side
+   offset for the opposite wing, or negative forward for a tail camera. Equal
+   start/end offsets keep the mount fixed; different values slide it along the body.
+3. **Look yaw** 0 / **Look pitch** 0 looks forward along the aircraft. Look yaw
+   180 looks backward; positive pitch looks down. Roll start/end add view tilt.
+   These rotations are composed in the aircraft frame, so an angled wing camera
+   follows the bank correctly.
+4. **Follow yaw / pitch / roll: On** follows the full body rotation. Each toggle
+   removes that aircraft axis from the view transform. To keep the view level
+   while following heading, disable pitch and roll and leave the look pitch and
+   roll offsets at zero. The camera's *position* always follows the full body
+   rotation so it stays on the aircraft even when view axes are disabled.
+5. Click **Place & preview**, then check a turn, steep climb and bank before
+   export. Save/load, undo/redo and rendering use the generated ordinary camera
+   path. Changing the source replay range after placement does not regenerate
+   its attachment; generate a new Mounted shot for a different aircraft maneuver.
+
+Mounted tests cover local body offsets, composed view rotations, independent
+view axes, full loops and barrel rolls, diagram dragging in both references,
+frozen action, saved-path playback, and control bounds at four window sizes.
+An in-game visual check of wing clearance, preview and export remains required.
 
 Automated verification covers orbit radius/focus, all three shot types, moving
 target headings, camera easing independent of action speed, frozen action, angle

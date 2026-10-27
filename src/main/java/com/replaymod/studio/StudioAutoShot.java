@@ -32,9 +32,10 @@ public final class StudioAutoShot extends StudioScreen {
     private List<ShotTargets.Target> targets;
     private int target=-1,loadedId=Integer.MIN_VALUE,loadingId=Integer.MIN_VALUE;
     private boolean motion=true;
+    private boolean followYaw=true,followPitch=true,followRoll=true;
     private FutureTask<RecordedVehicleTrack> loading;
     private RecordedVehicleTrack track;
-    private GuiTextField output,duration,in,out,px,py,pz,d0,d1,h0,h1,a0,a1,focus,r0,r1;
+    private GuiTextField output,duration,in,out,px,py,pz,d0,d1,h0,h1,a0,a1,focus,r0,r1,lookPitch;
     private AutomatedShot.Plan proposal;
     private String observed="",generated="",draftError="";
     private long changedAt;
@@ -52,6 +53,7 @@ public final class StudioAutoShot extends StudioScreen {
         button(1,20,52,108,(kind==AutomatedShot.Kind.ORBIT?"> ":"")+"Orbit");
         button(2,138,52,108,(kind==AutomatedShot.Kind.FOLLOW?"> ":"")+"Follow");
         button(3,256,52,108,(kind==AutomatedShot.Kind.FLY_BY?"> ":"")+"Fly-by");
+        button(24,374,52,108,(kind==AutomatedShot.Kind.MOUNTED?"> ":"")+"Mounted");
         button(99,canvasWidth-150,14,130,"Back to editor");
         output=field(20,112,160,text(output,StudioTime.format(initialOutput)));
         duration=field(204,112,160,text(duration,"0:06.000"));
@@ -69,11 +71,17 @@ public final class StudioAutoShot extends StudioScreen {
         a0=field(20,452,160,text(a0,kind==AutomatedShot.Kind.FLY_BY?"-50":"180"));
         a1=field(204,452,160,text(a1,kind==AutomatedShot.Kind.ORBIT?"360":kind==AutomatedShot.Kind.FLY_BY?"50":"180"));
         focus=field(20,500,106,text(focus,"2")); r0=field(139,500,106,text(r0,"0")); r1=field(258,500,106,text(r1,"0"));
+        if(kind==AutomatedShot.Kind.MOUNTED) {
+            lookPitch=field(500,52,106,text(lookPitch,"0"));
+            button(25,616,52,150,"Follow yaw: "+(followYaw?"On":"Off"));
+            button(26,776,52,150,"Follow pitch: "+(followPitch?"On":"Off"));
+            button(27,936,52,150,"Follow roll: "+(followRoll?"On":"Off"));
+        }
         button(10,20,538,344,"Camera easing: "+easeName());
         button(11,20,574,344,"Refresh draft");
         button(12,canvasWidth-374,canvasHeight-62,160,"Place shot");
         button(13,canvasWidth-200,canvasHeight-62,180,"Place & preview");
-        button(14,414,130,236,"Reference: "+(space==AutomatedShot.Space.VEHICLE?"Vehicle relative":"World relative"));
+        button(14,414,130,236,"Reference: "+(space==AutomatedShot.Space.VEHICLE?"Vehicle relative":kind==AutomatedShot.Kind.MOUNTED?"Frozen mount at In":"World relative"));
         button(15,660,130,140,view==ShotDiagram.View.TOP?"View: Top (X/Z)":"View: Side (X/Y)");
         button(16,810,130,130,"Reset path"); button(17,950,130,140,"Fit view");
         button(18,414,canvasHeight-180,50,"<"); button(19,474,canvasHeight-180,50,">");
@@ -87,8 +95,19 @@ public final class StudioAutoShot extends StudioScreen {
         return new AutomatedShot.Pose(c.posX-Math.sin(yaw)*Math.cos(pitch)*30,c.posY-Math.sin(pitch)*30,c.posZ+Math.cos(yaw)*Math.cos(pitch)*30,0);
     }
     private String easeName() { return new String[]{"Linear","Ease in / out","Ease in","Ease out"}[easing.ordinal()]; }
+    @Override protected String fieldHelp(int index) {
+        if(kind==AutomatedShot.Kind.MOUNTED) switch(index) {
+            case 7: case 8: return "Side offset\nLocal X in blocks. Use opposite signs for the two wings; keep start and end equal for a fixed mount.";
+            case 9: case 10: return "Up offset\nBlocks above the aircraft origin in its own coordinate system. This offset banks and pitches with the aircraft.";
+            case 11: case 12: return "Forward offset\nLocal Z in blocks. Positive is toward the nose; negative is toward the tail.";
+            case 13: return "Look yaw\nView angle relative to the enabled aircraft rotation axes. Zero looks forward; 180 looks backward.";
+            case 14: case 15: return "View roll offset\nAdditional camera tilt in degrees, after the enabled aircraft rotation axes. Keep both values zero for a rigid mount.";
+            case 16: return "Look pitch\nView angle in degrees. Positive looks down; negative looks up. This is composed with the enabled aircraft rotation axes.";
+        }
+        return super.fieldHelp(index);
+    }
     private String signature() {
-        StringBuilder s=new StringBuilder(kind+"/"+easing+"/"+space+"/"+curveRevision+"/"+(target<0?"point":targets.get(target).id)+"/"+motion);
+        StringBuilder s=new StringBuilder(kind+"/"+easing+"/"+space+"/"+curveRevision+"/"+(target<0?"point":targets.get(target).id)+"/"+motion+"/"+followYaw+"/"+followPitch+"/"+followRoll);
         for(GuiTextField f:fields) s.append('/').append(f.getText()); return s.toString();
     }
     private AutomatedShot.Settings settings() {
@@ -103,11 +122,16 @@ public final class StudioAutoShot extends StudioScreen {
         s.angleStart=StudioTime.number(a0.getText(),"Starting angle / travel"); s.angleChange=StudioTime.number(a1.getText(),"Ending angle / travel");
         if(kind==AutomatedShot.Kind.FOLLOW) s.angleChange-=s.angleStart;
         s.focusHeight=StudioTime.number(focus.getText(),"Focus height"); s.rollStart=StudioTime.number(r0.getText(),"Starting roll"); s.rollEnd=StudioTime.number(r1.getText(),"Ending roll");
+        if(kind==AutomatedShot.Kind.MOUNTED) {
+            s.viewYaw=s.focusHeight; s.viewPitch=StudioTime.number(lookPitch.getText(),"Look pitch");
+            s.followYaw=followYaw; s.followPitch=followPitch; s.followRoll=followRoll;
+        }
         return s;
     }
     private void refreshDraft() {
         proposal=null; draftError="";
         AutomatedShot.Settings settings=settings();
+        if(kind==AutomatedShot.Kind.MOUNTED && target<0) throw new IllegalArgumentException("Pick a vehicle for a mounted camera. Side / Up / Forward set its attachment offset.");
         AutomatedShot.Target targetPose;
         if(target>=0 && motion) {
             int id=targets.get(target).id;
@@ -117,7 +141,8 @@ public final class StudioAutoShot extends StudioScreen {
             }
             targetPose=track;
         } else {
-            AutomatedShot.Pose pose=new AutomatedShot.Pose(StudioTime.number(px.getText(),"Target X"),StudioTime.number(py.getText(),"Target Y"),StudioTime.number(pz.getText(),"Target Z"),target<0?0:targets.get(target).pose.yaw);
+            AutomatedShot.Pose selected=target<0?new AutomatedShot.Pose(0,0,0,0):targets.get(target).pose;
+            AutomatedShot.Pose pose=new AutomatedShot.Pose(StudioTime.number(px.getText(),"Target X"),StudioTime.number(py.getText(),"Target Y"),StudioTime.number(pz.getText(),"Target Z"),selected.yaw,selected.pitch,selected.roll);
             targetPose=unused -> pose;
         }
         AutomatedShot.Plan generatedPlan=AutomatedShot.generate(settings,targetPose,replay.getReplayDuration());
@@ -160,17 +185,19 @@ public final class StudioAutoShot extends StudioScreen {
         label("Video start",20,96,MUTED); label("Video duration",204,96,MUTED);
         label("Replay In",20,144,MUTED); label("Replay Out",204,144,MUTED);
         label("X",20,292,MUTED); label("Y",139,292,MUTED); label("Z",258,292,MUTED);
-        String distance=kind==AutomatedShot.Kind.FLY_BY?"Side offset":"Distance";
+        boolean mounted=kind==AutomatedShot.Kind.MOUNTED;
+        if(mounted) label("Look pitch",500,36,MUTED);
+        String distance=kind==AutomatedShot.Kind.FLY_BY || mounted?"Side offset":"Distance";
         label(distance+" start",20,340,MUTED); label(distance+" end",204,340,MUTED);
-        label("Height start",20,388,MUTED); label("Height end",204,388,MUTED);
-        label(kind==AutomatedShot.Kind.FLY_BY?"Along-track start":kind==AutomatedShot.Kind.ORBIT?"Start angle":"Bearing start",20,436,MUTED);
-        label(kind==AutomatedShot.Kind.FLY_BY?"Along-track end":kind==AutomatedShot.Kind.ORBIT?"Sweep degrees":"Bearing end",204,436,MUTED);
-        label("Focus height",20,484,MUTED); label("Roll start",139,484,MUTED); label("Roll end",258,484,MUTED);
-        label("Follow bearing: 0 front / 180 behind",20,614,MUTED);
+        label(mounted?"Up start":"Height start",20,388,MUTED); label(mounted?"Up end":"Height end",204,388,MUTED);
+        label(mounted?"Forward start":kind==AutomatedShot.Kind.FLY_BY?"Along-track start":kind==AutomatedShot.Kind.ORBIT?"Start angle":"Bearing start",20,436,MUTED);
+        label(mounted?"Forward end":kind==AutomatedShot.Kind.FLY_BY?"Along-track end":kind==AutomatedShot.Kind.ORBIT?"Sweep degrees":"Bearing end",204,436,MUTED);
+        label(mounted?"Look yaw":"Focus height",20,484,MUTED); label("Roll start",139,484,MUTED); label("Roll end",258,484,MUTED);
+        label(mounted?"Local blocks: side / up / forward":"Follow bearing: 0 front / 180 behind",20,614,MUTED);
         label("Easing changes the camera, not action speed.",20,634,MUTED);
         label("Drag numbered points. Top adjusts X/Z; Side adjusts X/Y.",408,canvasHeight-118,TEXT);
         label("Blue: camera   Green: target   Place & preview to watch the shot.",408,canvasHeight-98,MUTED);
-        String guidance=target<0?"Fixed point selected: pick a vehicle for a moving shot.":!motion?"Target motion is Off: this shot uses a fixed position.":in.getText().equals(out.getText())?"Replay In = Out: action is frozen. Set action 1x for motion.":space==AutomatedShot.Space.WORLD?"Path anchored at Replay In; aim tracks the moving vehicle.":"Path follows vehicle position and heading; pitch / bank stay independent.";
+        String guidance=target<0?"Fixed point selected: pick a vehicle for a moving shot.":!motion?"Target motion is Off: this shot uses a fixed position.":in.getText().equals(out.getText())?"Replay In = Out: action is frozen. Set action 1x for motion.":mounted?(space==AutomatedShot.Space.WORLD?"Mount frozen at Replay In. Use Vehicle relative to follow.":"Mount follows the full body pose; toggles control view rotation."):space==AutomatedShot.Space.WORLD?"Path anchored at Replay In; aim tracks the moving vehicle.":"Path follows vehicle position and heading; pitch / bank stay independent.";
         label(guidance,408,106,0xFFFFCB82);
         if(proposal!=null) {
             drawDiagram(proposal,414,166,canvasWidth-450,canvasHeight-380);
@@ -294,10 +321,16 @@ public final class StudioAutoShot extends StudioScreen {
     }
     @Override protected void activate(int id) {
         if(id==99) { escape(); return; }
-        if(id>=1 && id<=3) {
-            kind=AutomatedShot.Kind.values()[id-1];
+        if(id>=1 && id<=3 || id==24) {
+            boolean wasMounted=kind==AutomatedShot.Kind.MOUNTED;
+            kind=id==24?AutomatedShot.Kind.MOUNTED:AutomatedShot.Kind.values()[id-1];
             d0.setText(kind==AutomatedShot.Kind.FLY_BY?"12":"24"); d1.setText(d0.getText());
-            a0.setText(kind==AutomatedShot.Kind.FLY_BY?"-50":"180"); a1.setText(kind==AutomatedShot.Kind.FLY_BY?"50":kind==AutomatedShot.Kind.ORBIT?"360":"180"); initGui();
+            a0.setText(kind==AutomatedShot.Kind.FLY_BY?"-50":"180"); a1.setText(kind==AutomatedShot.Kind.FLY_BY?"50":kind==AutomatedShot.Kind.ORBIT?"360":"180");
+            if(kind==AutomatedShot.Kind.MOUNTED) {
+                d0.setText("8"); d1.setText("8"); h0.setText("1"); h1.setText("1");
+                a0.setText("0"); a1.setText("0"); focus.setText("0"); space=AutomatedShot.Space.VEHICLE;
+            } else if(wasMounted) { h0.setText("10"); h1.setText("10"); focus.setText("2"); }
+            initGui();
         } else if(id==4) { long end=StudioTime.parse(in.getText())+StudioTime.parse(duration.getText()); if(end>replay.getReplayDuration()) throw new IllegalArgumentException("Not enough recording for 1x action. Choose an earlier Replay In or shorter duration."); out.setText(StudioTime.format(end)); }
         else if(id==5) out.setText(in.getText());
         else if(id==6) output.setText(StudioTime.format(parent.automaticShotStart()));
@@ -318,6 +351,10 @@ public final class StudioAutoShot extends StudioScreen {
         else if(id==20) editCurve(curve.addAfter(selectedPoint),selectedPoint+1);
         else if(id==21) editCurve(curve.remove(selectedPoint),selectedPoint-1);
         else if(id==22 || id==23) restoreCurve(id==23);
+        else if(id>=25 && id<=27) {
+            if(id==25) followYaw=!followYaw; else if(id==26) followPitch=!followPitch; else followRoll=!followRoll;
+            initGui();
+        }
         else if(id==12 || id==13) {
             if(proposal==null || !generated.equals(signature())) throw new IllegalStateException("Wait for the updated shot draft.");
             AutomatedShot.place(ReplayModSimplePathing.instance.getCurrentTimeline(),proposal);

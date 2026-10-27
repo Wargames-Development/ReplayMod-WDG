@@ -30,12 +30,17 @@ public final class RecordedVehicleTrack implements AutomatedShot.Target {
         if (next!=null && (next.getKey()-after.getKey()>500 || missingBetween(after.getKey(),next.getKey()))) next=null;
         double h=after.getKey()-before.getKey(),h0=previous==null?h:before.getKey()-previous.getKey(),h1=next==null?h:next.getKey()-after.getKey();
         AutomatedShot.Pose p=previous==null?a:previous.getValue(),n=next==null?b:next.getValue();
-        double yawB=a.yaw+AutomatedShot.wrap(b.yaw-a.yaw);
         return new AutomatedShot.Pose(
             smooth(p.x,a.x,b.x,n.x,h0,h,h1,t,previous!=null,next!=null),
             smooth(p.y,a.y,b.y,n.y,h0,h,h1,t,previous!=null,next!=null),
             smooth(p.z,a.z,b.z,n.z,h0,h,h1,t,previous!=null,next!=null),
-            (float)smooth(a.yaw-AutomatedShot.wrap(a.yaw-p.yaw),a.yaw,yawB,yawB+AutomatedShot.wrap(n.yaw-b.yaw),h0,h,h1,t,previous!=null,next!=null));
+            angle(p.yaw,a.yaw,b.yaw,n.yaw,h0,h,h1,t,previous!=null,next!=null),
+            angle(p.pitch,a.pitch,b.pitch,n.pitch,h0,h,h1,t,previous!=null,next!=null),
+            angle(p.roll,a.roll,b.roll,n.roll,h0,h,h1,t,previous!=null,next!=null));
+    }
+    private static float angle(float p,float a,float b,float n,double h0,double h,double h1,double t,boolean previous,boolean next) {
+        double end=a+AutomatedShot.wrap(b-a);
+        return (float)smooth(a-AutomatedShot.wrap(a-p),a,end,end+AutomatedShot.wrap(n-b),h0,h,h1,t,previous,next);
     }
     private boolean missingBetween(int from,int to) { Integer absent=missing.ceiling(from); return absent!=null && absent<=to; }
     /** Monotone Hermite tangents keep velocity continuous without overshooting turns. */
@@ -77,10 +82,10 @@ public final class RecordedVehicleTrack implements AutomatedShot.Target {
                 int entity=packet.readInt(); text(packet,32767); text(packet,32767); String type=text(packet,32767);
                 double x=packet.readDouble(),y=packet.readDouble(),z=packet.readDouble();
                 packet.readDouble(); packet.readDouble(); packet.readDouble();
-                float yaw=packet.readFloat(); packet.readFloat(); packet.readByte(); packet.readLong();
-                packet.readFloat(); boolean destroyed=packet.readBoolean(); packet.readFloat(); packet.readFloat();
-                if(entity==entityId && type.startsWith("mcheli.") && !destroyed && Double.isFinite(x) && Double.isFinite(y) && Double.isFinite(z) && Float.isFinite(yaw)) {
-                    track.poses.put(batch,new AutomatedShot.Pose(x,y,z,yaw)); found=true;
+                float yaw=packet.readFloat(),pitch=packet.readFloat(); packet.readByte(); packet.readLong();
+                float roll=packet.readFloat(); boolean destroyed=packet.readBoolean(); packet.readFloat(); packet.readFloat();
+                if(entity==entityId && type.startsWith("mcheli.") && !destroyed && Double.isFinite(x) && Double.isFinite(y) && Double.isFinite(z) && Float.isFinite(yaw) && Float.isFinite(pitch) && Float.isFinite(roll)) {
+                    track.poses.put(batch,new AutomatedShot.Pose(x,y,z,yaw,pitch,roll)); found=true;
                 }
             }
             if(!found) track.missing.add(batch); else track.missing.remove(batch);

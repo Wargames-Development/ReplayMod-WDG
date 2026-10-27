@@ -12,6 +12,44 @@ import java.lang.reflect.Field;
 import static org.junit.Assert.*;
 
 public class StudioAutoShotTest {
+    @Test public void mountedControlsGenerateTheSelectedVehiclePoseAndRetainCustomViewSettings() throws Exception {
+        try(TestTimeline fixture=new TestTimeline()) {
+            StudioAutoShot screen=screen();
+            set(screen,"targets",java.util.Collections.singletonList(new ShotTargets.Target(42,"Plane",new AutomatedShot.Pose(10,80,20,40,25,60))));
+            set(screen,"target",0); set(screen,"motion",false);
+            screen.activate(24);
+            assertEquals(17,screen.fields.size());
+            screen.fields.get(13).setText("15"); screen.fields.get(16).setText("-10");
+            screen.activate(11);
+            AutomatedShot.Plan before=(AutomatedShot.Plan)get(screen,"proposal");
+            assertEquals(AutomatedShot.Kind.MOUNTED,before.kind);
+            assertEquals(25,before.frames.get(0).target.pitch,0); assertEquals(60,before.frames.get(0).target.roll,0);
+            screen.activate(27); screen.activate(26); screen.activate(25); screen.activate(11);
+            AutomatedShot.Frame after=((AutomatedShot.Plan)get(screen,"proposal")).frames.get(0);
+            assertEquals(15,after.yaw,1e-4); assertEquals(-10,after.pitch,1e-4); assertEquals(0,after.roll,1e-4);
+            assertEquals(before.frames.get(0).x,after.x,0); assertEquals(before.frames.get(0).y,after.y,0);
+            assertEquals("15",screen.fields.get(13).getText()); assertEquals("-10",screen.fields.get(16).getText());
+            assertTrue(screen.fieldHelp(16).contains("Look pitch"));
+            assertTrue(fixture.timeline.getPositionPath().getKeyframes().isEmpty());
+            screen.activate(2); screen.activate(11);
+            assertEquals(16,screen.fields.size()); assertEquals(AutomatedShot.Kind.FOLLOW,((AutomatedShot.Plan)get(screen,"proposal")).kind);
+        }
+    }
+    @Test public void mountedModeRequiresAVehicleAndItsControlsFitEverySupportedCanvas() throws Exception {
+        for(int[] window:new int[][]{{1120,720},{1920,1080},{3440,1440},{800,600}}) {
+            StudioAutoShot screen=screen();
+            StudioViewport viewport=new StudioViewport(window[0],window[1],1120,720,true);
+            screen.width=window[0]; screen.height=window[1]; screen.canvasWidth=viewport.canvasWidth; screen.canvasHeight=viewport.canvasHeight;
+            screen.activate(24); screen.attempt(() -> screen.activate(11));
+            assertNull(get(screen,"proposal")); assertTrue(screen.message.contains("Pick a vehicle"));
+            for(Object value:buttons(screen)) {
+                GuiButton b=(GuiButton)value;
+                assertTrue(b.xPosition>=0 && b.xPosition+b.width<=screen.canvasWidth);
+                assertTrue(b.yPosition>=0 && b.yPosition+b.height<=screen.canvasHeight);
+            }
+            for(GuiTextField f:screen.fields) assertTrue(f.xPosition>=0 && f.xPosition+f.width<=screen.canvasWidth);
+        }
+    }
     private static Object previousLoader;
     @org.junit.BeforeClass public static void eventOwner() throws Exception {
         Field instance=cpw.mods.fml.common.Loader.class.getDeclaredField("instance"); instance.setAccessible(true); previousLoader=instance.get(null);

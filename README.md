@@ -14,8 +14,10 @@ This branch deliberately does not retain ReplayMod's historical multi-Minecraft-
 
 ## Cinematic studio
 
-**Auto shots [G]** creates Orbit, Follow and Fly-by camera paths around a fixed
-point or recorded MCHR vehicle. Edit duration, replay In/Out, framing, easing and
+**Auto shots [G]** creates Orbit, Follow, Fly-by and Mounted camera paths around a fixed
+point or recorded MCHR vehicle. Mounted cameras follow aircraft pitch and bank,
+with editable local offsets and independent view rotation controls.
+Edit duration, replay In/Out, framing, easing and
 roll; review the draft, then place and preview it as one undoable shot. See
 [automated shots](docs/automated-shots.md) for controls and tracking details.
 

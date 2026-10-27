@@ -23,7 +23,7 @@ final class ShotTargets {
                 String entityType=(String)type.getField("entityClassName").get(info);
                 if(entityType==null || !entityType.startsWith("mcheli.") || !(entityType.contains("Plane") || entityType.contains("Heli") || entityType.contains("Tank") || entityType.contains("Vehicle"))) continue;
                 int id=type.getField("entityId").getInt(info);
-                result.put(id,new Target(id,(String)type.getField("entityName").get(info),new AutomatedShot.Pose(number(info,"posX"),number(info,"posY"),number(info,"posZ"),(float)number(info,"rotationYaw"))));
+                result.put(id,new Target(id,(String)type.getField("entityName").get(info),new AutomatedShot.Pose(number(info,"posX"),number(info,"posY"),number(info,"posZ"),(float)number(info,"rotationYaw"),(float)number(info,"rotationPitch"),(float)number(info,"rotationRoll"))));
             }
         } catch(ReflectiveOperationException absent) { /* Ordinary loaded vehicles remain selectable. */ }
         if(mc.theWorld!=null) for(Object value:mc.theWorld.loadedEntityList) {
@@ -31,7 +31,9 @@ final class ShotTargets {
             Entity entity=(Entity)value; if(entity.isDead) continue;
             String name=entity.getCommandSenderName();
             try { name=String.valueOf(entity.getClass().getMethod("getTypeName").invoke(entity)); } catch(ReflectiveOperationException ignored) { }
-            result.put(entity.getEntityId(),new Target(entity.getEntityId(),name,new AutomatedShot.Pose(entity.posX,entity.posY,entity.posZ,entity.rotationYaw)));
+            float roll=0;
+            try { roll=((Number)entity.getClass().getMethod("getRotRoll").invoke(entity)).floatValue(); } catch(ReflectiveOperationException ignored) { }
+            result.put(entity.getEntityId(),new Target(entity.getEntityId(),name,new AutomatedShot.Pose(entity.posX,entity.posY,entity.posZ,entity.rotationYaw,entity.rotationPitch,roll)));
         }
         List<Target> targets=new ArrayList<>(result.values());
         targets.sort(Comparator.comparingDouble(t -> distance(t.pose,camera.posX,camera.posY,camera.posZ)));
