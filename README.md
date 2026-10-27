@@ -82,8 +82,9 @@ For IntelliJ import and build instructions, see [SETUP.md](SETUP.md#intellij-ide
 ./gradlew clean build
 ```
 
-Builds use the WG `_X` counter, for example `ReplayMod-WDG-2.5.2-WDG_X10.jar`.
-Each successful packaging invocation advances the counter once. The same full
+Builds use the WG `_X` counter, starting at `ReplayMod-WDG-2.5.2-WDG_X72.jar`.
+Each successful packaging invocation advances an ignored local counter once;
+builds and IDE syncs leave tracked configuration unchanged. The same full
 version appears in Minecraft's Mods list, crash reports, and recording metadata.
 See [build numbering](SETUP.md#build-numbering) for details.
 

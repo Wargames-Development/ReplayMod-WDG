@@ -37,26 +37,58 @@ idea {
 
 group = 'com.replaymod'
 def versionBase = file('version.txt').text.trim()
-def currentBuildNumber = project.property('modBuildNumber').toString().toInteger()
-def packagingTaskNames = ['build', 'assemble', 'jar', 'shadowjar', 'reobf']
-def requestedTaskNames = gradle.startParameter.taskNames.collect { it.tokenize(':').last().toLowerCase(Locale.ROOT) }
-def packagingRequested = requestedTaskNames.isEmpty() || requestedTaskNames.any { packagingTaskNames.contains(it) }
-def effectiveBuildNumber = packagingRequested ? currentBuildNumber + 1 : currentBuildNumber
+def firstBuildNumber = project.property('modBuildNumber').toString().toInteger()
+if (firstBuildNumber < 1) throw new GradleException('modBuildNumber must be positive.')
+def buildNumberFile = file('.gradle/replaymod-build-number.txt')
+def readBuildNumber = {
+    if (!buildNumberFile.exists()) return firstBuildNumber - 1
+    def saved = buildNumberFile.getText('UTF-8').trim()
+    if (!(saved ==~ /\d{1,9}/)) throw new GradleException("Invalid local build counter: ${buildNumberFile}")
+    Math.max(firstBuildNumber - 1, saved.toInteger())
+}
+def currentBuildNumber = readBuildNumber()
+def effectiveBuildNumber = Math.max(firstBuildNumber, currentBuildNumber)
 version = "${versionBase}_X${effectiveBuildNumber}"
 archivesBaseName = 'ReplayMod-WDG'
 
-// Like the other WG repositories, keep one persisted number per packaging
-// invocation. IDE imports, workspace setup, compilation and tests are read-only.
-gradle.buildFinished { result ->
-    if (packagingRequested && !gradle.startParameter.dryRun && result.failure == null) {
-        def propertiesFile = file('gradle.properties')
-        def original = propertiesFile.getText('UTF-8')
-        def matcher = (original =~ /(?m)^modBuildNumber=\d+/)
-        if (!matcher.find()) {
-            throw new GradleException('gradle.properties must contain a valid modBuildNumber entry.')
+// Tooling API model imports can have no requested task names. Only an actual
+// packaging task graph may reserve a number; never write tracked configuration.
+def buildNumberLockFile = null
+def buildNumberLock = null
+gradle.taskGraph.whenReady { graph ->
+    if (graph.hasTask(tasks.jar)) {
+        if (!gradle.startParameter.dryRun) {
+            buildNumberFile.parentFile.mkdirs()
+            buildNumberLockFile = new RandomAccessFile(file('.gradle/replaymod-build-number.lock'), 'rw')
+            buildNumberLock = buildNumberLockFile.channel.tryLock()
+            if (buildNumberLock == null) {
+                throw new GradleException('Another ReplayMod packaging build is running. Wait for it to finish, then retry.')
+            }
         }
-        propertiesFile.write(matcher.replaceFirst("modBuildNumber=${effectiveBuildNumber}"), 'UTF-8')
-        logger.lifecycle("ReplayMod-WDG build number updated: X${currentBuildNumber} -> X${effectiveBuildNumber}")
+        currentBuildNumber = readBuildNumber()
+        effectiveBuildNumber = currentBuildNumber + 1
+        project.version = "${versionBase}_X${effectiveBuildNumber}"
+    }
+    // Configure consumers that capture values eagerly after the graph separates
+    // an IDE import/test from a packaging invocation.
+    tasks.sourceMainJava.replace '@MOD_VERSION@', project.version.toString()
+    tasks.sourceMainJava.replace '@MC_VERSION@', '[1.7.10]'
+    tasks.jar.archiveVersion.set(project.version.toString())
+    tasks.shadowJar.archiveVersion.set(project.version.toString())
+    tasks.jar.manifest.attributes 'Implementation-Version': project.version.toString()
+}
+
+gradle.buildFinished { result ->
+    try {
+        if (buildNumberLock != null && result.failure == null && (tasks.jar.state.didWork || tasks.jar.state.upToDate)) {
+            def temporary = java.nio.file.Files.createTempFile(buildNumberFile.parentFile.toPath(), 'replaymod-build-', '.tmp')
+            java.nio.file.Files.write(temporary, "${effectiveBuildNumber}\n".getBytes('UTF-8'))
+            java.nio.file.Files.move(temporary, buildNumberFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            logger.lifecycle("ReplayMod-WDG local build number saved: X${effectiveBuildNumber}")
+        }
+    } finally {
+        if (buildNumberLock != null) buildNumberLock.release()
+        if (buildNumberLockFile != null) buildNumberLockFile.close()
     }
 }
 
@@ -68,10 +100,6 @@ minecraft {
     runDir = 'eclipse'
 }
 
-// ForgeGradle 1.2 preprocesses the Java source through sourceMainJava before compilation.
-// Keep the mod annotation in lockstep with the full version, including its WG build number.
-tasks.sourceMainJava.replace '@MOD_VERSION@', project.version
-tasks.sourceMainJava.replace '@MC_VERSION@', '[1.7.10]'
 
 ext {
     mixinSrg = new File(project.buildDir, 'tmp/mixins/mixins.srg')
@@ -289,7 +317,7 @@ jar {
 }
 
 processResources {
-    inputs.property 'version', project.version
+    inputs.property 'version', { project.version.toString() }
     inputs.property 'mcversion', project.minecraftBaseVersion
     filesMatching(['mcmod.info']) {
         expand 'version': project.version, 'mcversion': project.minecraftBaseVersion

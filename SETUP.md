@@ -63,22 +63,32 @@ This repository pins Gradle 5.4.1 for ForgeGradle 1.2. Do not upgrade the wrappe
 
 ## Build numbering
 
-`version.txt` holds the base version (`2.5.2-WDG`). `modBuildNumber` in
-`gradle.properties` holds the last successful packaging build. The first numbered
-release is `2.5.2-WDG_X10`, followed by `_X11`, `_X12`, and so on.
+`version.txt` holds the base version (`2.5.2-WDG`). `modBuildNumber=72` in
+`gradle.properties` sets the first packaging number for a checkout without a
+local counter. Its first release is `2.5.2-WDG_X72`, then `_X73`, `_X74`, and so on.
+The last successful packaging number is stored in
+`.gradle/replaymod-build-number.txt`, which Git ignores. Builds never rewrite
+`gradle.properties`, so IDE syncs and packaging do not create tracked changes.
 
 Running `build` (including IntelliJ's **Build ReplayMod** configuration),
-`assemble`, `shadowJar`, `jar`, `reobf`, or the default Gradle task selects the
-next number. It is persisted once when the invocation succeeds; combining tasks
-in one invocation does not increment it multiple times. Failed invocations and
-`--dry-run` do not persist a new number. Imports, `idea`, workspace setup,
-`compileJava`, and test-only runs retain the current number.
+`assemble`, `shadowJar`, `jar`, `reobf`, or the default Gradle build selects the
+next number when its task graph includes JAR packaging. It is persisted once
+when JAR packaging succeeds, including reusing an up-to-date JAR from a failed
+attempt; combining tasks in one
+invocation does not increment it multiple times. Failed invocations and
+`--dry-run` do not persist a new number. IDE imports (including imports with no
+task names), `help`, `idea`, workspace setup, `compileJava`, and test-only runs
+do not advance the counter. `clean` leaves the counter intact. Overlapping
+packaging runs are rejected to prevent two builds reserving the same number.
 
 The complete version is used in the JAR filename, manifest, mod annotation,
 `mcmod.info`, Minecraft's Mods list, crash reports, and newly recorded replay
 metadata. Compare the `_X` number against the newest JAR for the same base version
-to identify an older installation. Keep `modBuildNumber` changes with the source
-when sharing a build so subsequent builds continue that sequence.
+to identify an older installation. Each checkout has its own local sequence.
+When intentionally setting a new starting number, edit `modBuildNumber` and
+remove `.gradle/replaymod-build-number.txt` while no packaging build is running.
+Copy that ignored counter separately if another checkout should continue the
+same sequence; Git commits do not advance or reset it.
 
 ## Video rendering / FFmpeg
 
