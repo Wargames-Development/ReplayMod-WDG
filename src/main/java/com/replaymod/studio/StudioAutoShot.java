@@ -7,17 +7,28 @@ import net.minecraft.client.gui.GuiTextField;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.renderer.Tessellator;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.input.Keyboard;
 import java.io.InputStream;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.FutureTask;
 
 /** A non-destructive shot draft, with background vehicle-track loading and explicit placement. */
 public final class StudioAutoShot extends StudioScreen {
+    private static final int HISTORY_LIMIT=32;
+    private final Deque<CurveState> undoCurves=new ArrayDeque<>(),redoCurves=new ArrayDeque<>();
     private final CinematicEditor parent;
     private final ReplayHandler replay;
     private AutomatedShot.Kind kind=AutomatedShot.Kind.ORBIT;
     private AutomatedShot.Ease easing=AutomatedShot.Ease.IN_OUT;
+    private AutomatedShot.Space space=AutomatedShot.Space.VEHICLE;
+    private ShotCurve curve=ShotCurve.flat(),dragStartCurve;
+    private ShotDiagram.View view=ShotDiagram.View.TOP;
+    private ShotDiagram diagram;
+    private int selectedPoint,draggingPoint=-1,dragX,dragY,curveRevision;
+    private AutomatedShot.Frame dragHandle;
     private List<ShotTargets.Target> targets;
     private int target=-1,loadedId=Integer.MIN_VALUE,loadingId=Integer.MIN_VALUE;
     private boolean motion=true;
@@ -34,6 +45,7 @@ public final class StudioAutoShot extends StudioScreen {
     }
     @Override protected StudioViewport createViewport() { return new StudioViewport(width,height,1120,720,true); }
     @Override protected void build() {
+        cancelledDrag(); diagram=null;
         CameraEntity camera=replay.getCameraEntity();
         if(camera==null) throw new IllegalStateException("Wait for the replay camera to finish loading.");
         if(targets==null) { targets=ShotTargets.collect(mc,camera); target=ShotTargets.aimed(targets,camera); }
@@ -61,6 +73,12 @@ public final class StudioAutoShot extends StudioScreen {
         button(11,20,574,344,"Refresh draft");
         button(12,canvasWidth-374,canvasHeight-62,160,"Place shot");
         button(13,canvasWidth-200,canvasHeight-62,180,"Place & preview");
+        button(14,414,130,236,"Reference: "+(space==AutomatedShot.Space.VEHICLE?"Vehicle relative":"World relative"));
+        button(15,660,130,140,view==ShotDiagram.View.TOP?"View: Top (X/Z)":"View: Side (X/Y)");
+        button(16,810,130,130,"Reset path"); button(17,950,130,140,"Fit view");
+        button(18,414,canvasHeight-180,50,"<"); button(19,474,canvasHeight-180,50,">");
+        button(20,534,canvasHeight-180,140,"Add after point"); button(21,684,canvasHeight-180,130,"Remove point");
+        button(22,824,canvasHeight-180,130,"Undo [Ctrl+Z]"); button(23,964,canvasHeight-180,130,"Redo [Ctrl+Y]");
     }
     private static String text(GuiTextField field,String fallback) { return field==null?fallback:field.getText(); }
     private static String num(double n) { return String.format(Locale.ROOT,"%.3f",n); }
@@ -70,11 +88,12 @@ public final class StudioAutoShot extends StudioScreen {
     }
     private String easeName() { return new String[]{"Linear","Ease in / out","Ease in","Ease out"}[easing.ordinal()]; }
     private String signature() {
-        StringBuilder s=new StringBuilder(kind+"/"+easing+"/"+(target<0?"point":targets.get(target).id)+"/"+motion);
+        StringBuilder s=new StringBuilder(kind+"/"+easing+"/"+space+"/"+curveRevision+"/"+(target<0?"point":targets.get(target).id)+"/"+motion);
         for(GuiTextField f:fields) s.append('/').append(f.getText()); return s.toString();
     }
     private AutomatedShot.Settings settings() {
         AutomatedShot.Settings s=new AutomatedShot.Settings(); s.kind=kind; s.ease=easing;
+        s.space=space; s.curve=curve;
         s.outputStart=StudioTime.parse(output.getText()); s.duration=StudioTime.parse(duration.getText());
         long from=StudioTime.parse(in.getText()),to=StudioTime.parse(out.getText());
         if(from>Integer.MAX_VALUE || to>Integer.MAX_VALUE) throw new IllegalArgumentException("Replay time is outside this recording.");
@@ -105,6 +124,7 @@ public final class StudioAutoShot extends StudioScreen {
         AutomatedShot.validatePlacement(ReplayModSimplePathing.instance.getCurrentTimeline(),generatedPlan);
         proposal=generatedPlan;
         generated=signature();
+        observed=generated;
     }
     private void loadTrack(int id) {
         if(loading!=null) loading.cancel(true);
@@ -128,7 +148,7 @@ public final class StudioAutoShot extends StudioScreen {
             loading=null;
         }
         String current=signature();
-        if(!current.equals(observed)) { observed=current; changedAt=System.currentTimeMillis(); proposal=null; draftError=""; }
+        if(!current.equals(observed)) { observed=current; changedAt=System.currentTimeMillis(); proposal=null; diagram=null; draftError=""; }
         if(proposal==null && loading==null && draftError.isEmpty() && System.currentTimeMillis()-changedAt>=250) {
             try { refreshDraft(); } catch(IllegalArgumentException | IllegalStateException error) { draftError=error.getMessage(); }
         }
@@ -148,41 +168,129 @@ public final class StudioAutoShot extends StudioScreen {
         label("Focus height",20,484,MUTED); label("Roll start",139,484,MUTED); label("Roll end",258,484,MUTED);
         label("Follow bearing: 0 front / 180 behind",20,614,MUTED);
         label("Easing changes the camera, not action speed.",20,634,MUTED);
-        label("Choose Follow, pick a vehicle, then Place & preview to follow it.",408,canvasHeight-118,TEXT);
-        label("Blue: camera   Green: target   View: top down",408,canvasHeight-98,MUTED);
-        String guidance=target<0?"Fixed point selected: pick a vehicle for a moving follow shot.":!motion?"Target motion is Off: this shot uses a fixed position.":in.getText().equals(out.getText())?"Replay In = Out: action is frozen. Set action 1x for motion.":"Draft only: the camera follows during placed-path playback.";
+        label("Drag numbered points. Top adjusts X/Z; Side adjusts X/Y.",408,canvasHeight-118,TEXT);
+        label("Blue: camera   Green: target   Place & preview to watch the shot.",408,canvasHeight-98,MUTED);
+        String guidance=target<0?"Fixed point selected: pick a vehicle for a moving shot.":!motion?"Target motion is Off: this shot uses a fixed position.":in.getText().equals(out.getText())?"Replay In = Out: action is frozen. Set action 1x for motion.":space==AutomatedShot.Space.WORLD?"Path anchored at Replay In; aim tracks the moving vehicle.":"Path follows vehicle position and heading; pitch / bank stay independent.";
         label(guidance,408,106,0xFFFFCB82);
         if(proposal!=null) {
-            drawDiagram(proposal,414,126,canvasWidth-450,canvasHeight-314);
-            label(proposal.frames.size()+" camera samples | "+String.format(Locale.ROOT,"%.3fx action",proposal.speed()),414,canvasHeight-170,ACCENT);
-            label("Video "+StudioTime.format(proposal.start())+" - "+StudioTime.format(proposal.end()),414,canvasHeight-150,TEXT);
+            drawDiagram(proposal,414,166,canvasWidth-450,canvasHeight-380);
+            AutomatedShot.Frame handle=proposal.handles.get(selectedPoint);
+            label("Point "+(selectedPoint+1)+" / "+curve.points.size()+"  |  Video "+StudioTime.format(handle.time)+"  |  Height "+num(handle.y),414,canvasHeight-200,TEXT);
+            label(proposal.frames.size()+" samples | "+String.format(Locale.ROOT,"%.3fx action",proposal.speed())+" | Video "+StudioTime.format(proposal.start())+" - "+StudioTime.format(proposal.end()),414,canvasHeight-142,ACCENT);
         } else {
             String status=loading!=null?"Reading recorded vehicle motion...":draftError.isEmpty()?"Updating draft...":draftError;
             List<String> lines=fontRendererObj.listFormattedStringToWidth(status,canvasWidth-454);
-            for(int i=0;i<Math.min(7,lines.size());i++) label(lines.get(i),414,140+i*14,draftError.isEmpty()?MUTED:0xFFFFCB82);
+            for(int i=0;i<Math.min(7,lines.size());i++) label(lines.get(i),414,174+i*14,draftError.isEmpty()?MUTED:0xFFFFCB82);
         }
         boolean ready=proposal!=null && generated.equals(signature());
-        for(Object value:buttonList) { GuiButton button=(GuiButton)value; if(button.id==12 || button.id==13) button.enabled=ready; }
+        for(Object value:buttonList) {
+            GuiButton button=(GuiButton)value;
+            if(button.id==12 || button.id==13 || button.id==18 || button.id==19) button.enabled=ready;
+            if(button.id==20) button.enabled=ready && curve.canAddAfter(selectedPoint);
+            if(button.id==21) button.enabled=ready && selectedPoint>0 && selectedPoint<curve.points.size()-1;
+            if(button.id==22) button.enabled=!undoCurves.isEmpty() || dragStartCurve!=null && !sameCurve(curve,dragStartCurve);
+            if(button.id==23) button.enabled=!redoCurves.isEmpty();
+        }
     }
     private void drawDiagram(AutomatedShot.Plan p,int left,int top,int width,int height) {
         if(height<50) return;
-        double minX=Double.POSITIVE_INFINITY,minZ=minX,maxX=Double.NEGATIVE_INFINITY,maxZ=maxX;
-        for(AutomatedShot.Frame f:p.frames) { minX=Math.min(minX,Math.min(f.x,f.target.x)); minZ=Math.min(minZ,Math.min(f.z,f.target.z)); maxX=Math.max(maxX,Math.max(f.x,f.target.x)); maxZ=Math.max(maxZ,Math.max(f.z,f.target.z)); }
-        double scale=Math.min((width-32)/Math.max(1,maxX-minX),(height-32)/Math.max(1,maxZ-minZ));
-        double ox=left+width/2.0-(minX+maxX)*scale/2,oz=top+height/2.0-(minZ+maxZ)*scale/2;
+        if(diagram==null) diagram=new ShotDiagram(p,view,left,top,width,height);
+        ShotDiagram d=diagram;
+        StudioViewport viewport=createViewport();
+        double sx=mc.displayWidth/(double)this.width,sy=mc.displayHeight/(double)this.height;
+        GL11.glPushAttrib(GL11.GL_SCISSOR_BIT | GL11.GL_ENABLE_BIT);
+        GL11.glEnable(GL11.GL_SCISSOR_TEST);
+        GL11.glScissor((int)((viewport.x+left*viewport.scale)*sx),(int)(mc.displayHeight-(viewport.y+(top+height)*viewport.scale)*sy),
+                Math.max(0,(int)(width*viewport.scale*sx)),Math.max(0,(int)(height*viewport.scale*sy)));
         GL11.glDisable(GL11.GL_TEXTURE_2D); GL11.glLineWidth(2);
         try {
             Tessellator t=Tessellator.instance;
             t.startDrawing(GL11.GL_LINE_STRIP); t.setColorOpaque_I(ACCENT&0xffffff);
-            for(AutomatedShot.Frame f:p.frames) t.addVertex(ox+f.x*scale,oz+f.z*scale,0); t.draw();
+            for(AutomatedShot.Frame f:p.frames) t.addVertex(d.x(f),d.y(f),0); t.draw();
             t.startDrawing(GL11.GL_LINE_STRIP); t.setColorOpaque_I(0x80D4A3);
-            for(AutomatedShot.Frame f:p.frames) t.addVertex(ox+f.target.x*scale,oz+f.target.z*scale,0); t.draw();
-        } finally { GL11.glLineWidth(1); GL11.glEnable(GL11.GL_TEXTURE_2D); GL11.glColor4f(1,1,1,1); }
-        AutomatedShot.Frame first=p.frames.get(0),last=p.frames.get(p.frames.size()-1);
-        int sx=(int)(ox+first.x*scale),sy=(int)(oz+first.z*scale),ex=(int)(ox+last.x*scale),ey=(int)(oz+last.z*scale);
-        drawRect(sx-4,sy-4,sx+4,sy+4,0xFF80D4A3); drawRect(ex-3,ey-3,ex+3,ey+3,TimelineGraphics.RANGE);
-        if(Math.hypot(sx-ex,sy-ey)<16) label("Start / End",sx+6,sy,TEXT);
-        else { label("Start",sx+6,sy,TEXT); label("End",ex+6,ey,TEXT); }
+            for(AutomatedShot.Frame f:p.frames) t.addVertex(d.targetX(f),d.targetY(f),0); t.draw();
+            GL11.glEnable(GL11.GL_TEXTURE_2D);
+            for(int i=0;i<p.handles.size();i++) if(i!=selectedPoint) drawHandle(p,i,false);
+            drawHandle(p,selectedPoint,true);
+        } finally { GL11.glLineWidth(1); GL11.glPopAttrib(); GL11.glColor4f(1,1,1,1); }
+    }
+    private void drawHandle(AutomatedShot.Plan plan,int index,boolean selected) {
+        AutomatedShot.Frame f=plan.handles.get(index);
+        int x=(int)Math.round(diagram.x(f)),y=(int)Math.round(diagram.y(f)),size=selected?5:4;
+        int color=selected?0xFFFFCB82:index==0?0xFF80D4A3:index==plan.handles.size()-1?TimelineGraphics.RANGE:ACCENT;
+        drawRect(x-size-1,y-size-1,x+size+2,y+size+2,0xFF0D131A);
+        drawRect(x-size,y-size,x+size+1,y+size+1,color);
+        label(Integer.toString(index+1),x+8,y-4,color);
+    }
+    @Override protected void clicked(int x,int y,int button) {
+        if(button!=0 || diagram==null || proposal==null || !generated.equals(signature()) || !hit(x,y,diagram.left,diagram.top,diagram.width,diagram.height)) return;
+        int picked=diagram.pick(proposal,x,y,selectedPoint);
+        if(picked<0) return;
+        selectedPoint=picked; draggingPoint=picked; dragStartCurve=curve; dragHandle=proposal.handles.get(picked); dragX=x; dragY=y;
+    }
+    @Override protected void dragged(int x,int y,int button) {
+        if(button!=0 || draggingPoint<0 || diagram==null) return;
+        x=Math.max(diagram.left+8,Math.min(diagram.left+diagram.width-8,x));
+        y=Math.max(diagram.top+8,Math.min(diagram.top+diagram.height-8,y));
+        ShotCurve previous=curve; AutomatedShot.Plan previousPlan=proposal;
+        try {
+            ShotCurve next=diagram.drag(dragStartCurve,draggingPoint,dragHandle,space,x-dragX,y-dragY);
+            if(sameCurve(curve,next)) return;
+            curve=next; curveRevision++;
+            refreshDraft(); message="";
+        } catch(IllegalArgumentException | IllegalStateException error) {
+            curve=previous; proposal=previousPlan; generated=signature(); draftError=""; message=error.getMessage();
+        }
+        observed=signature();
+    }
+    @Override protected void released(int x,int y,int button) { if(button==0) cancelledDrag(); }
+    @Override protected void cancelledDrag() {
+        // Store one before-state per gesture, even if resize or another control ends the drag.
+        if(dragStartCurve!=null && !sameCurve(curve,dragStartCurve)) rememberCurve(new CurveState(dragStartCurve,draggingPoint));
+        draggingPoint=-1; dragStartCurve=null; dragHandle=null;
+    }
+    private static final class CurveState {
+        final ShotCurve curve; final int selected;
+        CurveState(ShotCurve curve,int selected) { this.curve=curve; this.selected=selected; }
+    }
+    private static boolean sameCurve(ShotCurve a,ShotCurve b) {
+        if(a.points.size()!=b.points.size()) return false;
+        for(int i=0;i<a.points.size();i++) {
+            ShotCurve.Point x=a.points.get(i),y=b.points.get(i);
+            if(x.t!=y.t || x.x!=y.x || x.y!=y.y || x.z!=y.z) return false;
+        }
+        return true;
+    }
+    private void rememberCurve(CurveState state) {
+        pushCurve(undoCurves,state); redoCurves.clear();
+    }
+    private static void pushCurve(Deque<CurveState> history,CurveState state) {
+        history.addLast(state);
+        if(history.size()>HISTORY_LIMIT) history.removeFirst();
+    }
+    private void editCurve(ShotCurve next,int selected) {
+        cancelledDrag();
+        if(!sameCurve(curve,next)) { rememberCurve(new CurveState(curve,selectedPoint)); curve=next; curveRevision++; }
+        selectedPoint=selected;
+    }
+    private void restoreCurve(boolean redo) {
+        cancelledDrag();
+        Deque<CurveState> from=redo?redoCurves:undoCurves,to=redo?undoCurves:redoCurves;
+        if(from.isEmpty()) return;
+        pushCurve(to,new CurveState(curve,selectedPoint));
+        CurveState state=from.removeLast(); curve=state.curve; selectedPoint=state.selected; curveRevision++;
+        proposal=null; draftError=""; message="";
+        // Refresh immediately without refitting the diagram or changing other shot fields.
+        observed=signature(); changedAt=0;
+        pollDraft();
+    }
+    boolean historyKey(int key,boolean control,boolean shift) {
+        if(!control || key!=Keyboard.KEY_Z && key!=Keyboard.KEY_Y) return false;
+        attempt(() -> restoreCurve(key==Keyboard.KEY_Y || shift)); return true;
+    }
+    @Override protected void keyTyped(char character,int key) {
+        if(historyKey(key,isCtrlKeyDown(),isShiftKeyDown())) return;
+        super.keyTyped(character,key);
     }
     @Override protected void activate(int id) {
         if(id==99) { escape(); return; }
@@ -202,6 +310,14 @@ public final class StudioAutoShot extends StudioScreen {
         } else if(id==9) { motion=!motion; discardTargetDraft(); initGui(); }
         else if(id==10) { easing=AutomatedShot.Ease.values()[(easing.ordinal()+1)%AutomatedShot.Ease.values().length]; initGui(); }
         else if(id==11) { draftError=""; refreshDraft(); }
+        else if(id==14) { space=space==AutomatedShot.Space.VEHICLE?AutomatedShot.Space.WORLD:AutomatedShot.Space.VEHICLE; initGui(); }
+        else if(id==15) { view=view==ShotDiagram.View.TOP?ShotDiagram.View.SIDE:ShotDiagram.View.TOP; initGui(); }
+        else if(id==16) { editCurve(ShotCurve.flat(),0); diagram=null; }
+        else if(id==17) diagram=null;
+        else if(id==18 || id==19) selectedPoint=(selectedPoint+(id==18?curve.points.size()-1:1))%curve.points.size();
+        else if(id==20) editCurve(curve.addAfter(selectedPoint),selectedPoint+1);
+        else if(id==21) editCurve(curve.remove(selectedPoint),selectedPoint-1);
+        else if(id==22 || id==23) restoreCurve(id==23);
         else if(id==12 || id==13) {
             if(proposal==null || !generated.equals(signature())) throw new IllegalStateException("Wait for the updated shot draft.");
             AutomatedShot.place(ReplayModSimplePathing.instance.getCurrentTimeline(),proposal);

@@ -84,6 +84,7 @@ public abstract class OpenGlFrameCapturer<F extends Frame, D extends CaptureData
         if (angelica) com.replaymod.replay.compat.ReplayTerrainReadiness.beginFrame();
         if (renderer!=null) com.replaymod.replay.compat.ReplayTerrainExport.prepareFrame();
         do {
+            if(renderer!=null) com.replaymod.replay.compat.ReplayTerrainVisibility.beginFrame();
             resizeMainWindow(mc, getFrameWidth(), getFrameHeight());
             pushMatrix();
             try {
@@ -101,7 +102,8 @@ public abstract class OpenGlFrameCapturer<F extends Frame, D extends CaptureData
 
             boolean chunksReady=!angelica || com.replaymod.replay.compat.ReplayTerrainReadiness.afterPass();
             boolean lodsReady=renderer==null || com.replaymod.replay.compat.DistantHorizonsReplay.renderReady();
-            if (renderer == null || (chunksReady && lodsReady)) break;
+            boolean occlusionReady=renderer==null || com.replaymod.replay.compat.ReplayTerrainVisibility.afterPass();
+            if (renderer == null || (chunksReady && lodsReady && occlusionReady)) break;
             if (System.currentTimeMillis()-terrainStarted>120000) throw new IllegalStateException("Terrain did not stabilize for this output frame within two minutes.");
             renderer.setStage("Finishing terrain and shadows for this camera view...");
             if (System.currentTimeMillis() >= nextProgress) {

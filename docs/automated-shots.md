@@ -1,4 +1,4 @@
-# Automated shots (X31)
+# Automated shots
 
 Open the cinematic editor with T, then **Auto shots [G]**. The modal fills the
 window and generates original camera paths inside the existing saved-path format.
@@ -10,7 +10,7 @@ It does not depend on ReForgedPlay or ReplayMod Cinematics.
    **Pick aimed / nearby** refreshes the list and uses the camera's centre, falling
    back to the nearest vehicle origin within 12 blocks when nothing is aimed at.
 2. Choose **Orbit**, **Follow**, or **Fly-by**. Orbit defaults to a full turn.
-   Follow keeps a distance/bearing relative to the recorded vehicle heading.
+   Follow keeps a chosen distance/bearing.
    Fly-by travels from a negative along-track offset to a positive one while
    looking at the vehicle, with a separately editable sideways offset.
 3. Set video duration and replay In/Out. **Set action 1x** advances the action by
@@ -20,19 +20,55 @@ It does not depend on ReForgedPlay or ReplayMod Cinematics.
    roll. Every start/end value is editable. Follow bearing 0 is ahead of the
    vehicle and 180 behind it. Fixed-point bearings use world heading zero (+Z).
    Easing changes camera offsets, independently of recorded-action speed.
-5. The top-down draft updates after typing pauses briefly. Blue is camera travel;
-   green is the target's recorded route. Fixed points can be entered as XYZ.
-   Vehicle motion is read in the background and cached for the selected vehicle.
-6. **Place shot** inserts the reviewed path; **Place & preview** also plays it in
+5. Choose **Reference: Vehicle relative** (the default) or **World relative**.
+   Vehicle relative moves and turns the entire path with the recorded vehicle's
+   position and heading. Aircraft pitch and bank do not tilt the camera path;
+   camera roll stays under the existing roll controls. World relative anchors
+   the path at the target's position at Replay In. Follow/Fly-by also freeze the
+   starting heading; world-relative Orbit uses world heading zero. Both modes
+   continue aiming at the moving target, independently of the path's reference.
+   With a fixed target or frozen action, neither reference follows new movement.
+6. The draft updates after typing pauses briefly. Blue is camera travel; green
+   is the target's recorded route. Fixed points can be entered as XYZ. Vehicle
+   motion is read in the background and cached for the selected vehicle.
+   Drag the five numbered path points to refine the curve. **View: Top (X/Z)**
+   edits horizontal position; **View: Side (X/Y)** edits height and X. Use both
+   views to edit every axis. The selected point is gold; **< / >** select points
+   when they overlap, including an orbit's start/end. **Add after point** inserts
+   at the midpoint of the following time interval; **Remove point** removes an
+   interior point. Keep 2-16 points with at least 1% of video time between them.
+   **Reset path** restores five unadjusted points without resetting other fields.
+   **Ctrl+Z** / **Undo** restores the preceding spline edit; **Ctrl+Y** or
+   **Ctrl+Shift+Z** / **Redo** restores an undone edit. The draft retains the
+   latest **32 actions**, including point drags, additions/removals and Reset path.
+   A whole drag counts as one action. Clicking without moving or a rejected drag
+   does not consume history. A new spline edit clears redo. Shortcuts also work
+   while a text field has focus, without changing its contents or the placed
+   timeline. History survives view/reference changes and resizing within this
+   panel; closing Auto shots discards its draft history.
+   **Fit view** fits both routes; the scale stays fixed during dragging.
+   Point adjustments survive changes to fields, reference, view and window size
+   within the draft. Switching reference reinterprets adjustments in that space:
+   world XYZ for World, right/up/forward relative to heading for Vehicle.
+   Points refine the generated route with a smooth offset spline, so an untouched
+   orbit remains circular. Point times refer to video time and do not retime the
+   action. Invalid drags, including crossing the focus, retain the last valid draft.
+7. **Place shot** inserts the reviewed path; **Place & preview** also plays it in
    the main camera viewer. Placement refuses occupied ranges, including ranges
    inside an existing interpolated segment, and refuses backwards replay clocks.
    The default output location is zero for an empty path or 50 ms after its last
    key. **Append** restores that output location.
-7. Placement is one Ctrl+Z undo step. The generated path appears as one timing
+8. Placement is one Ctrl+Z undo step. The generated path appears as one timing
    range, with its start/end listed. **Samples: On** exposes individual camera
    samples for manual edits. Dragging the ending boundary retimes the whole
    generated move; Timing / speed also controls its entire range. Deleting a
    boundary with Samples off removes the generated shot as one undoable edit.
+
+Point handles edit the draft before placement. Placement bakes the reviewed path
+into ordinary saved camera keys, including a sample at each point's video time
+(rounded to milliseconds). Refined camera motion therefore survives save/load,
+retiming, playback and export. Reopening Auto shots starts a new draft; use the
+editor's **Samples: On** to edit the individual keys of an already placed shot.
 
 Tracking uses the chosen entity's MCHR server snapshots in `recording.tmcpr`.
 Snapshots include vehicles outside vanilla tracking distance. The reader validates
@@ -66,6 +102,11 @@ target headings, camera easing independent of action speed, frozen action, angle
 wrap, bounds and invalid parameters, collision rejection against existing timeline
 segments, atomic placement/undo/redo/delete, grouping serialization/retiming, parser
 framing, cancellation, missing/destroyed entities, and actual PlaneTest F-16 motion.
-Headless native-control tests check layout and fixed-point entry at four window
-sizes. In-game picking, diagram appearance and preview/export still require a
-visual check in the complete Wargames instance.
+Reference-mode tests cover all three shot types with a translating, climbing,
+turning target. Curve tests check nonuniform point tangents, exact saved handles,
+the 600-key limit, and dragging in both spaces/views, including millisecond
+rounding on 101 ms shots. Native-control tests check layout at four window sizes,
+draft-only editing, overlapping endpoint selection, and retained adjustments.
+Opt-in GPU tests check path/handle drawing and diagram clipping in Top/Side at
+three window shapes with a doubled framebuffer scale. Full in-game preview and
+export still require a visual check in the complete Wargames instance.

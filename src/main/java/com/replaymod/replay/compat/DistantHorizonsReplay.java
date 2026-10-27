@@ -72,17 +72,8 @@ public final class DistantHorizonsReplay {
             String channel = (String) Class.forName("com.seibel.distanthorizons.common.AbstractPluginPacketSender").getField("WRAPPER_PACKET_RESOURCE").get(null);
             Map<Integer, Set<String>> identities = RecordedLodKeys.read(input, channel, id);
             File root = new File(Minecraft.getMinecraft().mcDataDir, "Distant_Horizons_server_data");
-            File[] servers = root.listFiles(File::isDirectory);
-            if (servers == null) return found;
-            for (Map.Entry<Integer, Set<String>> identity : identities.entrySet()) {
-                if (identity.getValue().size() != 1) continue; // Multiple worlds in one dimension need an explicit choice.
-                List<File> matches = new ArrayList<>(); String key = identity.getValue().iterator().next();
-                for (File server : servers) {
-                    if (server.getName().equals("REPLAY") || server.getName().startsWith("ReplayModReplay")) continue;
-                    File candidate = new File(server, key);
-                    if (new File(candidate, "DistantHorizons.sqlite").isFile()) matches.add(candidate);
-                }
-                if (matches.size() == 1) found.put(identity.getKey(), relativeFolder(matches.get(0)));
+            for (Map.Entry<Integer, File> match : LodCacheFolders.match(root, identities).entrySet()) {
+                found.put(match.getKey(), relativeFolder(match.getValue()));
             }
         } catch (ReflectiveOperationException error) { com.replaymod.compat.ReplayModCompat.LOGGER.warn("Cannot discover recorded DH world keys; select a cache in Replay library", error); }
         return found;
@@ -135,6 +126,7 @@ public final class DistantHorizonsReplay {
         catch (ReflectiveOperationException error) { throw new IllegalStateException("Could not enable read-only LOD terrain for replay playback.", error); }
     }
     public static boolean isActive() { return active; }
+    public static boolean hasSource(int dimension) { return active && sources.containsKey(dimension); }
     public static void requireTerrain() {
         if (!available()) return;
         World world = Minecraft.getMinecraft().theWorld;

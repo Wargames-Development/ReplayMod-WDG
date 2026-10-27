@@ -116,6 +116,7 @@ public class ReplayModSimplePathing extends EventRegistrations implements Module
             }
         }, true);
         core.getKeyBindingRegistry().registerRaw(Keyboard.KEY_Z, () -> {
+            if(core.getMinecraft().currentScreen instanceof com.replaymod.studio.StudioAutoShot) return false;
             if (GuiScreen.isCtrlKeyDown() && currentTimeline != null) {
                 Timeline timeline = currentTimeline.getTimeline();
                 if (GuiScreen.isShiftKeyDown()) {
@@ -132,6 +133,7 @@ public class ReplayModSimplePathing extends EventRegistrations implements Module
             return false;
         });
         core.getKeyBindingRegistry().registerRaw(Keyboard.KEY_Y, () -> {
+            if(core.getMinecraft().currentScreen instanceof com.replaymod.studio.StudioAutoShot) return false;
             if (GuiScreen.isCtrlKeyDown() && currentTimeline != null) {
                 Timeline timeline = currentTimeline.getTimeline();
                 if (timeline.peekRedoStack() != null) {

@@ -2,6 +2,8 @@ package com.replaymod.editor.gui;
 
 import com.replaymod.core.ReplayMod;
 import com.replaymod.core.versions.MCVer;
+import com.replaymod.core.utils.LegacyChunkPacket;
+import com.replaymod.editor.ReplayModEditor;
 import com.replaymod.replaystudio.PacketData;
 import com.replaymod.replaystudio.data.Marker;
 import com.replaymod.replaystudio.filter.StreamFilter;
@@ -124,6 +126,17 @@ public class MarkerProcessor {
         int splitCounter = 0;
 
         PacketTypeRegistry registry = MCVer.getPacketTypeRegistry(true);
+        // Check before moving the recording or creating any split outputs. Widening a header
+        // back afterwards cannot recover sections discarded by ReplayStudio's 16-section codec.
+        if (hasUnsupportedChunkMasks(path, registry)) {
+            ReplayModEditor.LOGGER.warn("Skipping replay cuts/splits for {}: chunk masks exceed 16 bits. "
+                    + "The complete original recording has been preserved.", path);
+            mod.runLater(() -> mod.printWarningToChat("replaymod.chat.unsupportedchunkmasks"));
+            progress.accept(1f);
+            try (ReplayFile inputReplayFile = mod.openReplay(path)) {
+                return Collections.singletonList(new Pair<>(path, inputReplayFile.getMetaData()));
+            }
+        }
         ChunkSquashFilter squashFilter = new ChunkSquashFilter();
 
         List<Pair<Path, ReplayMetaData>> outputPaths = new ArrayList<>();
@@ -262,6 +275,28 @@ public class MarkerProcessor {
         }
 
         return outputPaths;
+    }
+
+    private static boolean hasUnsupportedChunkMasks(Path path, PacketTypeRegistry registry) throws IOException {
+        try (ReplayFile replay = ReplayMod.instance.openReplay(path);
+             ReplayInputStream input = replay.getPacketData(registry)) {
+            PacketData data;
+            while ((data = input.readPacket()) != null) {
+                try {
+                    Packet packet = data.getPacket();
+                    if (packet.atLeast(ProtocolVersion.v1_8)) continue;
+                    PacketType type = packet.getType();
+                    if (type != PacketType.ChunkData && type != PacketType.BulkChunkData) continue;
+                    byte[] bytes = new byte[packet.getBuf().readableBytes()];
+                    packet.getBuf().getBytes(packet.getBuf().readerIndex(), bytes);
+                    if (!(type == PacketType.ChunkData ? LegacyChunkPacket.canSquashSingle(bytes)
+                            : LegacyChunkPacket.canSquashBulk(bytes))) return true;
+                } finally {
+                    data.release();
+                }
+            }
+        }
+        return false;
     }
     /**
      * ReplayStudio's legacy PacketChunkData writer uses a VarInt for the compressed-data length

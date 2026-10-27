@@ -46,4 +46,35 @@ public class LegacyChunkPacketTest {
         }
         try { LegacyChunkPacket.standardSingle(single(true,false,0x10000,0)); fail(); } catch (IOException expected) { }
     }
+    @Test public void squashCompatibilityChecksBothSingleMasksWithoutChangingThePacket() throws Exception {
+        for (boolean wide:new boolean[]{false,true}) {
+            assertTrue(LegacyChunkPacket.canSquashSingle(single(wide,false,0xffff,0xffff)));
+        }
+        for (int mask:new int[]{0x10000,16777215,Integer.MIN_VALUE,-1}) {
+            byte[] packet=single(true,false,mask,0),original=packet.clone();
+            assertFalse(LegacyChunkPacket.canSquashSingle(packet));
+            assertArrayEquals(original,packet);
+            assertFalse(LegacyChunkPacket.canSquashSingle(single(true,true,0,mask)));
+        }
+    }
+    @Test public void squashCompatibilityChecksEveryBulkColumnAndBothMasks() throws Exception {
+        for (int mask:new int[]{0xffff,16777215,Integer.MIN_VALUE}) {
+            for (boolean add:new boolean[]{false,true}) {
+                ByteArrayOutputStream bytes=new ByteArrayOutputStream();
+                DataOutputStream out=new DataOutputStream(bytes);
+                out.writeShort(2); out.writeInt(3); out.writeBoolean(true);
+                out.write(new byte[]{0x78,(byte)0x9c,0});
+                for (int column=0;column<2;column++) {
+                    out.writeInt(column); out.writeInt(-36);
+                    out.writeInt(column==1 && !add ? mask : 1);
+                    out.writeInt(column==1 && add ? mask : 0);
+                }
+                byte[] packet=bytes.toByteArray(),original=packet.clone();
+                assertEquals(mask==0xffff,LegacyChunkPacket.canSquashBulk(packet));
+                assertArrayEquals(original,packet);
+            }
+        }
+        try { LegacyChunkPacket.canSquashBulk(new byte[6]); fail(); }
+        catch (IOException expected) { }
+    }
 }

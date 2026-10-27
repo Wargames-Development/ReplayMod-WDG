@@ -531,6 +531,8 @@ replaymod.gui.offeropeneye6=More information is available at https://openeye.ope
 replaymod.gui.offeropeneye7=Clicking Yes will download OpenEye and place it in your mods folder.
 replaymod.gui.offeropeneye8=It will then be active the next time you start Minecraft.
 
+replaymod.chat.unsupportedchunkmasks=Saved the complete replay. Automatic cuts and splits were skipped because this recording uses unsupported extended chunk masks.
+
 #Advanced Screenshots Gui
 replaymod.gui.advancedscreenshots.title=Screenshot Settings
 replaymod.gui.advancedscreenshots.create=Take Screenshot

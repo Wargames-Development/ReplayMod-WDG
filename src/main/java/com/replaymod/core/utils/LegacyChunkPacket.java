@@ -16,6 +16,11 @@ public final class LegacyChunkPacket {
         return p.length>=offset+4 && integer(p,offset)>=0 && integer(p,offset)==p.length-offset-4;
     }
     public static boolean extendedSingle(byte[] p) { return lengthAt(p,17); }
+    /** Whether both masks can be represented by ReplayStudio's vanilla 16-section codec. */
+    public static boolean canSquashSingle(byte[] original) throws IOException {
+        byte[] p=normalizeSingle(original);
+        return !extendedSingle(p) || ((integer(p,9)|integer(p,13))&0xffff0000)==0;
+    }
     public static byte[] normalizeSingle(byte[] p) throws IOException {
         if (lengthAt(p,17) || lengthAt(p,13)) return p;
         for (int offset:new int[]{13,17}) {
@@ -65,5 +70,14 @@ public final class LegacyChunkPacket {
             word(result,to+8,integer(p,from+8)); word(result,to+10,integer(p,from+12));
         }
         return result;
+    }
+    public static boolean canSquashBulk(byte[] p) throws IOException {
+        if (!extendedBulk(p)) return true;
+        int count=word(p,0),start=7+integer(p,2);
+        for (int i=0;i<count;i++) {
+            int from=start+i*16;
+            if (((integer(p,from+8)|integer(p,from+12))&0xffff0000)!=0) return false;
+        }
+        return true;
     }
 }

@@ -25,7 +25,7 @@ public final class ReplayModLateMixins implements ILateMixinLoader {
     public static List<String> aircraftMixins(Set<String> loadedMods) {
         return loadedMods.contains("mcheli") ? Arrays.asList(
             "MixinMCHClientProxy_MCHeli", "MixinMCHClientCommonTickHandler_MCHeli",
-            "MixinMCHAircraftPose_MCHeli", "MixinMCHFarVehicle_MCHeli", "MixinMCHExportPose_MCHeli",
+            "MixinMCHAircraftPose_MCHeli", "MixinMCHFarVehicle_MCHeli", "MixinMCHExportPose_MCHeli", "MixinMCHTerrainOcclusion_MCHeli",
             "MixinMCHTrackerClock_MCHeli", "MixinMCHSnapshotClock_MCHeli",
             "MixinMCHTargetMarker_MCHeli", "MixinMCHSoundUpdater_MCHeli", "MixinMCHRiders_MCHeli") : Collections.emptyList();
     }

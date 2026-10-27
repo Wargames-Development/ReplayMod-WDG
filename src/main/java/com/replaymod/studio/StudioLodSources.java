@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.replaymod.core.ReplayMod;
 import com.replaymod.replay.ReplayModReplay;
 import com.replaymod.replay.compat.DistantHorizonsReplay;
+import com.replaymod.replay.compat.LodCacheFolders;
 import com.replaymod.replaystudio.replay.ReplayFile;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -21,18 +22,10 @@ public final class StudioLodSources extends StudioScreen {
         ReplayFile file = ReplayMod.instance.openReplay(recording.toPath());
         try { selected = DistantHorizonsReplay.read(file); } finally { file.close(); }
         File root = new File(ReplayMod.instance.getMinecraft().mcDataDir, "Distant_Horizons_server_data");
-        File[] servers = root.listFiles(File::isDirectory);
-        if (servers != null) for (File server : servers) {
-            if (server.getName().equals("REPLAY") || server.getName().startsWith("ReplayModReplay")) continue;
-            File[] levels = server.listFiles(File::isDirectory);
-            if (levels != null) for (File level : levels) if (new File(level, "DistantHorizons.sqlite").isFile() && dimension(level) != null) candidates.add(level);
-        }
-        candidates.sort(Comparator.comparing(File::getPath));
+        candidates.addAll(LodCacheFolders.candidates(root));
     }
     public static Integer dimension(File folder) {
-        String name = folder.getName(); int separator = name.lastIndexOf("@@");
-        if (separator < 0) return null;
-        try { return Integer.parseInt(name.substring(separator + 2)); } catch (NumberFormatException invalid) { return null; }
+        return LodCacheFolders.dimension(folder);
     }
     @Override protected void build() {
         button(1, 36, 450, 120, "Previous"); button(2, 166, 450, 120, "Next");

@@ -19,6 +19,58 @@ public class AutomatedShotTest {
         for(int i=1;i<plan.frames.size();i++) assertTrue(plan.frames.get(i).time-plan.frames.get(i-1).time<=17);
     }
     private static final AutomatedShot.Target FIXED=t -> new AutomatedShot.Pose(10,80,20,0);
+    @Test public void worldPathsStayAnchoredWhileVehiclePathsTranslateAndTurnForEveryShotKind() {
+        AutomatedShot.Target moving=t -> new AutomatedShot.Pose((t-10000)/100.0,80+(t-10000)/200.0,20,90+(t-10000)/100f);
+        AutomatedShot.Target frozen=t -> moving.at(10000);
+        for(AutomatedShot.Kind kind:AutomatedShot.Kind.values()) {
+            AutomatedShot.Settings s=settings(kind); s.curve=s.curve.move(2,3,4,-5);
+            s.space=AutomatedShot.Space.WORLD;
+            AutomatedShot.Plan world=AutomatedShot.generate(s,moving,60000),stationary=AutomatedShot.generate(s,frozen,60000);
+            for(int i=0;i<world.frames.size();i++) {
+                AutomatedShot.Frame a=world.frames.get(i),b=stationary.frames.get(i);
+                assertEquals(b.x,a.x,0); assertEquals(b.y,a.y,0); assertEquals(b.z,a.z,0); assertLooksAtTarget(a,2);
+            }
+            s.space=AutomatedShot.Space.VEHICLE;
+            AutomatedShot.Plan vehicle=AutomatedShot.generate(s,moving,60000);
+            // Undo the target's translation and heading: the local camera path is identical.
+            AutomatedShot.Target zeroHeading=t -> new AutomatedShot.Pose(0,0,0,0);
+            AutomatedShot.Plan local=AutomatedShot.generate(s,zeroHeading,60000);
+            for(int i=0;i<vehicle.frames.size();i++) {
+                AutomatedShot.Frame a=vehicle.frames.get(i),b=local.frames.get(i);
+                double yaw=Math.toRadians(a.target.yaw),dx=a.x-a.target.x,dz=a.z-a.target.z;
+                assertEquals(b.x,Math.cos(yaw)*dx+Math.sin(yaw)*dz,1e-8);
+                assertEquals(b.z,-Math.sin(yaw)*dx+Math.cos(yaw)*dz,1e-8);
+                assertEquals(b.y,a.y-a.target.y,1e-8); assertLooksAtTarget(a,2);
+            }
+        }
+    }
+    @Test public void refinedPointsAreExactSavedKeysAndRetainReplayTimingAfterReopening() throws Exception {
+        AutomatedShot.Settings s=settings(AutomatedShot.Kind.ORBIT); s.space=AutomatedShot.Space.WORLD;
+        s.curve=s.curve.move(2,9,7,-5).addAfter(1).move(2,-6,12,3);
+        AutomatedShot.Plan plan=AutomatedShot.generate(s,FIXED,60000);
+        SPTimeline timeline=timeline(); AutomatedShot.place(timeline,plan);
+        com.replaymod.replaystudio.pathing.serialize.TimelineSerialization serializer=new com.replaymod.replaystudio.pathing.serialize.TimelineSerialization(new SPTimeline(),null);
+        SPTimeline loaded=new SPTimeline(serializer.deserialize(serializer.serialize(java.util.Collections.singletonMap("Refined",timeline.getTimeline()))).get("Refined"));
+        for(AutomatedShot.Frame handle:plan.handles) {
+            assertSame(handle,plan.frames.stream().filter(f -> f.time==handle.time).findFirst().get());
+            org.apache.commons.lang3.tuple.Triple<Double,Double,Double> position=loaded.getPositionPath().getKeyframe(handle.time).getValue(CameraProperties.POSITION).get();
+            assertEquals(handle.x,position.getLeft(),0); assertEquals(handle.y,position.getMiddle(),0); assertEquals(handle.z,position.getRight(),0);
+            assertEquals(Integer.valueOf(handle.replay),loaded.getTimePath().getKeyframe(handle.time).getValue(TimestampProperty.PROPERTY).get());
+            assertLooksAtTarget(handle,2);
+        }
+        loaded.getTimePath().updateAll(); assertEquals(Integer.valueOf(12250),loaded.getTimePath().getValue(TimestampProperty.PROPERTY,2250).get());
+        assertEquals(1,new ShotTiming(loaded).spans().size());
+    }
+    @Test public void maximumPointCountKeepsExactHandlesWithinSixHundredSamples() {
+        AutomatedShot.Settings s=settings(AutomatedShot.Kind.ORBIT); s.duration=300000; s.samplesPerSecond=60;
+        while(s.curve.points.size()<ShotCurve.MAX_POINTS) {
+            int i=0; while(!s.curve.canAddAfter(i)) i++;
+            s.curve=s.curve.addAfter(i);
+        }
+        AutomatedShot.Plan plan=AutomatedShot.generate(s,FIXED,60000);
+        assertEquals(600,plan.frames.size()); assertEquals(16,plan.handles.size());
+        for(int i=0;i<plan.handles.size();i++) assertEquals(Math.round(s.curve.points.get(i).t*s.duration),plan.handles.get(i).time);
+    }
     @Test public void reopeningOlderGeneratedPathsSmoothsTheirCameraWithoutChangingTheirTiming() {
         SPTimeline original=timeline(); AutomatedShot.place(original,AutomatedShot.generate(settings(AutomatedShot.Kind.FOLLOW),FIXED,60000));
         for (com.replaymod.replaystudio.pathing.path.PathSegment segment:new java.util.ArrayList<>(original.getPositionPath().getSegments()))

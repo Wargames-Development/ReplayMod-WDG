@@ -13,7 +13,8 @@ public class ReplayModLateMixinsTest {
     @Test public void mchrHooksAreSelectedAfterForgeDiscoversTheModWithoutProbingEarlyClassVisibility() throws Exception {
         assertTrue(ReplayModLateMixins.aircraftMixins(Collections.emptySet()).isEmpty());
         List<String> hooks=ReplayModLateMixins.aircraftMixins(Collections.singleton("mcheli"));
-        assertEquals(10,hooks.size()); assertTrue(hooks.contains("MixinMCHExportPose_MCHeli"));
+        assertEquals(11,hooks.size()); assertTrue(hooks.contains("MixinMCHExportPose_MCHeli"));
+        assertTrue(hooks.contains("MixinMCHTerrainOcclusion_MCHeli"));
         assertTrue(hooks.contains("MixinMCHRiders_MCHeli"));
         assertTrue(hooks.contains("MixinMCHSoundUpdater_MCHeli"));
         assertTrue(hooks.contains("MixinMCHTargetMarker_MCHeli"));

@@ -29,7 +29,9 @@ public final class RecordedLodKeys {
                 int payloadLength = payload.readUnsignedShort();
                 if (payloadLength != payload.available() || payloadLength < 10 || payload.readUnsignedByte() != 0 || payload.readUnsignedByte() != levelMessageId) continue;
                 String dimension = text(payload), serverKey = text(payload), levelKey = text(payload);
-                if (payload.available() != 8 || !serverKey.matches("[a-zA-Z0-9_-]{0,150}") || !levelKey.matches("[a-zA-Z0-9_@:-]{1,150}")) continue;
+                payload.readLong(); // Server time; newer WDG builds append the readable storage name.
+                if (payload.available() > 0) text(payload);
+                if (payload.available() != 0 || !serverKey.matches("[a-zA-Z0-9_-]{0,150}") || !levelKey.matches("[a-zA-Z0-9_@:-]{1,150}")) continue;
                 int colon = dimension.lastIndexOf(':');
                 int dim = Integer.parseInt(dimension.substring(colon + 1));
                 result.computeIfAbsent(dim, unused -> new HashSet<>()).add(levelKey.replace(":", "@@"));

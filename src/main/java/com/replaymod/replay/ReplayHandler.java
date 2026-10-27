@@ -160,6 +160,7 @@ public class ReplayHandler {
 
         closing = true;
         com.replaymod.replay.compat.ReplayAircraftExport.close();
+        com.replaymod.replay.compat.ReplayTerrainVisibility.close();
         if (editorSeek != null) editorSeek.cancel();
         ReplayClosingCallback.EVENT.invoker().replayClosing(this);
 

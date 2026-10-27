@@ -12,8 +12,12 @@ public class RecordedLodKeysTest {
     private static final String CHANNEL = "distant_horizonsmsg";
     private void text(DataOutputStream output, String text) throws IOException { byte[] bytes = text.getBytes(StandardCharsets.UTF_8); output.writeShort(bytes.length); output.write(bytes); }
     private byte[] record(String channel, int message, String key) throws IOException {
+        return record(channel, message, key, null);
+    }
+    private byte[] record(String channel, int message, String key, String storageName) throws IOException {
         ByteArrayOutputStream payload = new ByteArrayOutputStream(); DataOutputStream dh = new DataOutputStream(payload);
         dh.writeByte(0); dh.writeByte(message); text(dh, "overworld:0"); text(dh, ""); text(dh, key); dh.writeLong(0);
+        if (storageName != null) text(dh, storageName);
         ByteArrayOutputStream packet = new ByteArrayOutputStream(); DataOutputStream minecraft = new DataOutputStream(packet);
         minecraft.writeByte(0x3F); minecraft.writeByte(channel.length()); minecraft.write(channel.getBytes(StandardCharsets.UTF_8)); minecraft.writeShort(payload.size()); minecraft.write(payload.toByteArray());
         ByteArrayOutputStream framed = new ByteArrayOutputStream(); DataOutputStream recording = new DataOutputStream(framed);
@@ -28,6 +32,12 @@ public class RecordedLodKeysTest {
     @Test public void multipleWorldsInOneDimensionRemainAmbiguousRatherThanPickingTheLast() throws Exception {
         ByteArrayOutputStream stream = new ByteArrayOutputStream(); stream.write(record(CHANNEL, 2, "first@overworld:0")); stream.write(record(CHANNEL, 2, "second@overworld:0"));
         assertEquals(2, RecordedLodKeys.read(new ByteArrayInputStream(stream.toByteArray()), CHANNEL, 2).get(0).size());
+    }
+    @Test public void readableStorageNameExtensionPreservesTheWorldIdentity() throws Exception {
+        for (String name : Arrays.asList("", "earth40", "../untrusted-name")) {
+            Map<Integer, Set<String>> keys = RecordedLodKeys.read(new ByteArrayInputStream(record(CHANNEL, 2, "world@overworld:0", name)), CHANNEL, 2);
+            assertEquals(Collections.singleton("world@overworld@@0"), keys.get(0));
+        }
     }
     @Test public void malformedLengthsAndTraversalKeysCannotBecomeSourcePaths() throws Exception {
         ByteArrayOutputStream stream = new ByteArrayOutputStream(); DataOutputStream output = new DataOutputStream(stream); output.writeInt(0); output.writeInt(Integer.MAX_VALUE);

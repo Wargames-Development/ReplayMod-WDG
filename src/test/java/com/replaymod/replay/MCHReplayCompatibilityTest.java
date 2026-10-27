@@ -164,6 +164,9 @@ public class MCHReplayCompatibilityTest {
         assertNotNull(find(aircraft,"getServerRoll","()F")); assertNotNull(find(aircraft,"setRotRoll","(F)V"));
         assertClock(read(Paths.get(root,"mcheli/render/MCH_RenderFarVehicle.class")),"onRenderWorldLast");
         ClassNode far=read(Paths.get(root,"mcheli/render/MCH_RenderFarVehicle.class"));
+        ClassNode terrain=read(Paths.get(root,"mcheli/render/MCH_WGMapOcclusion.class"));
+        assertNotNull(find(terrain,"traceSegment","(IDDDDDD)Lmcheli/render/MCH_WGMapOcclusion$Result;"));
+        assertNotNull(find(terrain,"terrainGeneration","()J"));
         assertNotNull("Riders use the same unified render pass as the body",find(far,"renderContact",
             "(Lnet/minecraft/client/Minecraft;Lmcheli/render/MCH_RenderFarVehicle$SmoothedPose;Lmcheli/render/MCH_RenderFarVehicle$RenderDefinition;Lmcheli/aircraft/MCH_EntityAircraft;FIZZDD)V"));
         assertTrue(hasCall(far,"renderContact","mcheli/aircraft/MCH_RenderAircraft","renderAircraft"));

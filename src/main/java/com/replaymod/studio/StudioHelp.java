@@ -8,7 +8,7 @@ final class StudioHelp {
             return "Show or hide the video preview during export. Uncheck it to skip preview pixel copies and texture uploads; the exported video is unchanged.";
         if (screen.equals("StudioAutoShot")) switch (id) {
             case 1: return "Move the camera around the target.\nExample: a 360-degree sweep makes one full orbit.";
-            case 2: return "Keep the camera at a bearing relative to the vehicle's recorded heading.\nExample: select a vehicle, leave motion On, use bearing 180, then Place & preview.";
+            case 2: return "Keep the camera at a chosen bearing. Vehicle relative follows recorded position and heading; World relative holds the route at Replay In.\nExample: choose Vehicle relative and bearing 180 for a chase shot.";
             case 3: return "Move past the target while looking at it.\nExample: travel from -50 to 50 with a side offset of 12 blocks.";
             case 4: return "Set Replay Out to Replay In plus video duration for normal-speed action.\nExample: In 0:14 and duration 0:10 gives Out 0:24.";
             case 5: return "Set Replay Out equal to In to freeze the recorded action while the camera moves.\nExample: orbit a frozen aircraft.";
@@ -20,6 +20,15 @@ final class StudioHelp {
             case 11: return "Recalculate the draft using these settings and retry loading vehicle motion if needed.\nExample: after changing Replay In/Out, check the route or error shown on the right.";
             case 12: return "Insert the valid draft into an empty video range as one undoable shot. Wait for loading/errors to clear.\nExample: place the shot, then play it from the editor.";
             case 13: return "Insert the valid draft and immediately play its camera move. Wait for loading/errors to clear.\nExample: use this to watch the selected aircraft being followed.";
+            case 14: return "Choose the camera path's reference. Vehicle relative follows position and heading, without aircraft pitch or bank. World relative anchors the path at Replay In, using the starting heading for Follow / Fly-by. Both keep aiming at the target. Existing point offsets are interpreted in the chosen reference.";
+            case 15: return "Switch the diagram between Top (X/Z) and Side (X/Y). Drag numbered points to bend the camera path; action timing stays unchanged. Use both views to adjust all three axes.";
+            case 16: return "Discard manual point adjustments and restore five points on the generated path. Distance, height, timing and the other shot settings stay as entered.";
+            case 17: return "Fit the entire camera and target route into this diagram. The diagram scale stays fixed while dragging so points follow the mouse predictably.";
+            case 18: case 19: return "Select the previous or next path point. Useful when the start and end of an orbit overlap. Selected points are highlighted in gold; drag one in either view to adjust it.";
+            case 20: return "Insert a point halfway through the interval after the selected point, up to 16 points. The new point starts on the current adjustment curve. Select an earlier point if the end point is selected.";
+            case 21: return "Remove the selected interior point and smoothly join its neighbours. The start and end points cannot be removed; drag them instead.";
+            case 22: return "Undo a spline drag, point addition/removal or Reset path. Each drag is one action; this draft retains the latest 32 actions. Ctrl+Z works even when a text field has focus. Other shot settings stay as entered.";
+            case 23: return "Redo an undone spline edit with Ctrl+Y or Ctrl+Shift+Z. Making a new spline edit clears redo history. Draft history lasts until this Auto Shot panel closes.";
         }
         if (screen.equals("CinematicEditor")) switch (id) {
             case 1: return "Open your recordings and folders.\nExample: choose another replay to edit.";

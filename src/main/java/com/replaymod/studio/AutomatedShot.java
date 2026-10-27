@@ -9,11 +9,14 @@ import com.replaymod.simplepathing.SPTimeline;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.TreeMap;
+import java.util.TreeSet;
 
 /** Camera generation is pure; only an explicit placement changes the project. */
 public final class AutomatedShot {
     public enum Kind { ORBIT, FOLLOW, FLY_BY }
     public enum Ease { LINEAR, IN_OUT, IN, OUT }
+    public enum Space { WORLD, VEHICLE }
     public interface Target {
         Pose at(int replayMillis);
         default void validateRange(int from,int to) { }
@@ -25,6 +28,8 @@ public final class AutomatedShot {
     public static final class Settings {
         public Kind kind=Kind.ORBIT;
         public Ease ease=Ease.IN_OUT;
+        public Space space=Space.VEHICLE;
+        public ShotCurve curve=ShotCurve.flat();
         public long outputStart,duration=6000;
         public int replayIn,replayOut,samplesPerSecond=60;
         public double distanceStart=24,distanceEnd=24,heightStart=10,heightEnd=10;
@@ -39,15 +44,17 @@ public final class AutomatedShot {
         }
     }
     public static final class Plan {
-        public final Kind kind; public final List<Frame> frames;
-        private Plan(Kind kind,List<Frame> frames) { this.kind=kind; this.frames=Collections.unmodifiableList(frames); }
+        public final Kind kind; public final Space space; public final List<Frame> frames,handles;
+        private Plan(Kind kind,Space space,List<Frame> frames,List<Frame> handles) {
+            this.kind=kind; this.space=space; this.frames=Collections.unmodifiableList(frames); this.handles=Collections.unmodifiableList(handles);
+        }
         public long start() { return frames.get(0).time; }
         public long end() { return frames.get(frames.size()-1).time; }
         public double speed() { return (frames.get(frames.size()-1).replay-(double)frames.get(0).replay)/(end()-start()); }
     }
     private AutomatedShot() { }
     public static Plan generate(Settings s,Target target,int recordingDuration) {
-        if(s.kind==null || s.ease==null || target==null) throw new IllegalArgumentException("Choose a shot type and target.");
+        if(s.kind==null || s.ease==null || s.space==null || s.curve==null || target==null) throw new IllegalArgumentException("Choose a shot type, reference mode and target.");
         if(s.outputStart<0 || s.duration<100 || s.duration>300000 || s.outputStart>Integer.MAX_VALUE-s.duration)
             throw new IllegalArgumentException("Choose a video duration from 0.1 seconds to 5 minutes, inside the video clock.");
         if(s.replayIn<0 || s.replayOut<s.replayIn || s.replayOut>recordingDuration)
@@ -58,33 +65,63 @@ public final class AutomatedShot {
         if(s.kind!=Kind.FLY_BY && Math.abs(s.angleChange)>7200) throw new IllegalArgumentException("Limit one shot to 20 turns. Split longer rotations into several shots.");
         if(s.samplesPerSecond<1 || s.samplesPerSecond>60) throw new IllegalArgumentException("Path detail must be between 1 and 60 samples per second.");
         target.validateRange(s.replayIn,s.replayOut);
-        int count=(int)Math.min(600,Math.max(2,Math.ceil(s.duration*s.samplesPerSecond/1000.0)+1));
-        List<Frame> frames=new ArrayList<>(count); float lastYaw=0;
-        for(int i=0;i<count;i++) {
-            double t=i/(double)(count-1),u=ease(t,s.ease);
-            long time=s.outputStart+Math.round(t*s.duration);
+        Pose anchor=validPose(target,s.replayIn);
+        ShotCurve clockCurve=s.curve.onClock(s.duration);
+        TreeSet<Long> times=sampleTimes(s);
+        TreeMap<Long,Frame> indexed=new TreeMap<>(); float lastYaw=0;
+        for(long time:times) {
+            double t=(time-s.outputStart)/(double)s.duration,u=ease(t,s.ease);
             int replay=(int)Math.round(s.replayIn+t*(s.replayOut-(double)s.replayIn));
-            Pose p=target.at(replay);
-            if(p==null || !Double.isFinite(p.x) || !Double.isFinite(p.y) || !Double.isFinite(p.z) || !Float.isFinite(p.yaw))
-                throw new IllegalArgumentException("No valid target pose at replay "+StudioTime.format(replay)+".");
+            Pose p=validPose(target,replay),origin=s.space==Space.VEHICLE?p:anchor;
+            double heading=s.space==Space.VEHICLE?p.yaw:s.kind==Kind.ORBIT?0:anchor.yaw;
             double distance=lerp(s.distanceStart,s.distanceEnd,u),height=lerp(s.heightStart,s.heightEnd,u);
-            double angle=Math.toRadians(s.angleStart+s.angleChange*u+(s.kind==Kind.ORBIT?0:p.yaw));
+            double angle=Math.toRadians(s.angleStart+s.angleChange*u+heading);
             double x,z;
             if(s.kind==Kind.FLY_BY) {
                 // Angles become along-track distances; distance is the sideways offset.
-                double along=lerp(s.angleStart,s.angleChange,u),heading=Math.toRadians(p.yaw);
-                x=p.x-Math.sin(heading)*along+Math.cos(heading)*distance;
-                z=p.z+Math.cos(heading)*along+Math.sin(heading)*distance;
-            } else { x=p.x-Math.sin(angle)*distance; z=p.z+Math.cos(angle)*distance; }
-            double y=p.y+height,dx=p.x-x,dy=p.y+s.focusHeight-y,dz=p.z-z;
+                double along=lerp(s.angleStart,s.angleChange,u),radians=Math.toRadians(heading);
+                x=origin.x-Math.sin(radians)*along+Math.cos(radians)*distance;
+                z=origin.z+Math.cos(radians)*along+Math.sin(radians)*distance;
+            } else { x=origin.x-Math.sin(angle)*distance; z=origin.z+Math.cos(angle)*distance; }
+            // Refinements are indexed by video time, so dragging never retimes recorded action.
+            ShotCurve.Point offset=clockCurve.at(t);
+            double rotation=Math.toRadians(s.space==Space.VEHICLE?p.yaw:0);
+            x+=Math.cos(rotation)*offset.x-Math.sin(rotation)*offset.z;
+            z+=Math.sin(rotation)*offset.x+Math.cos(rotation)*offset.z;
+            double y=origin.y+height+offset.y,dx=p.x-x,dy=p.y+s.focusHeight-y,dz=p.z-z;
             double horizontal=Math.hypot(dx,dz);
             if(Math.hypot(horizontal,dy)<0.1) throw new IllegalArgumentException("The camera crosses its focus point. Increase distance, side offset or height.");
             float yaw=horizontal<1e-7 ? lastYaw : (float)Math.toDegrees(Math.atan2(-dx,dz));
-            if(i>0) yaw=lastYaw+wrap(yaw-lastYaw);
+            if(!indexed.isEmpty()) yaw=lastYaw+wrap(yaw-lastYaw);
             float pitch=(float)-Math.toDegrees(Math.atan2(dy,horizontal));
-            frames.add(new Frame(time,replay,x,y,z,yaw,pitch,(float)lerp(s.rollStart,s.rollEnd,u),p)); lastYaw=yaw;
+            indexed.put(time,new Frame(time,replay,x,y,z,yaw,pitch,(float)lerp(s.rollStart,s.rollEnd,u),p)); lastYaw=yaw;
         }
-        return new Plan(s.kind,frames);
+        List<Frame> handles=new ArrayList<>();
+        for(ShotCurve.Point point:s.curve.points) handles.add(indexed.get(s.outputStart+Math.round(point.t*s.duration)));
+        return new Plan(s.kind,s.space,new ArrayList<>(indexed.values()),handles);
+    }
+    private static Pose validPose(Target target,int replay) {
+        Pose p=target.at(replay);
+        if(p==null || !Double.isFinite(p.x) || !Double.isFinite(p.y) || !Double.isFinite(p.z) || !Float.isFinite(p.yaw))
+            throw new IllegalArgumentException("No valid target pose at replay "+StudioTime.format(replay)+".");
+        return p;
+    }
+    private static TreeSet<Long> sampleTimes(Settings s) {
+        int count=(int)Math.min(600,Math.max(2,Math.ceil(s.duration*s.samplesPerSecond/1000.0)+1));
+        TreeSet<Long> times=new TreeSet<>(),controls=new TreeSet<>();
+        for(int i=0;i<count;i++) times.add(s.outputStart+Math.round(i*s.duration/(double)(count-1)));
+        for(ShotCurve.Point point:s.curve.points) controls.add(s.outputStart+Math.round(point.t*s.duration));
+        times.addAll(controls);
+        // Keep exact editable points without exceeding the existing 600-key bound.
+        while(times.size()>600) {
+            long remove=-1,bestGap=Long.MAX_VALUE;
+            for(long time:times) if(!controls.contains(time)) {
+                long gap=Math.min(time-times.lower(time),times.higher(time)-time);
+                if(gap<bestGap) { bestGap=gap; remove=time; }
+            }
+            times.remove(remove);
+        }
+        return times;
     }
     public static double ease(double t,Ease ease) {
         switch(ease) { case IN_OUT:return t*t*(3-2*t); case IN:return t*t; case OUT:return 1-(1-t)*(1-t); default:return t; }
